@@ -2,9 +2,9 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EventActivity, GroundingSource } from "../types";
 
-// In-memory cache for ultra-fast navigation between pages/cities
+// In-memory cache for instant navigation
 const eventCache = new Map<string, { events: EventActivity[], sources: GroundingSource[], timestamp: number }>();
-const CACHE_TTL = 1000 * 60 * 15; // 15 minutes cache life
+const CACHE_TTL = 1000 * 60 * 60; // 1 hour cache
 
 const getApiKey = () => {
   try {
@@ -24,10 +24,9 @@ export interface FetchOptions {
 }
 
 export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[] }> => {
-  const { category, startDate, endDate, keyword, page = 1, userLocation } = options;
+  const { category, startDate, endDate, keyword, page = 1 } = options;
   const cacheKey = JSON.stringify({ cityName, category, startDate, endDate, keyword, page });
 
-  // Return from cache if available and fresh for speed
   const cached = eventCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
     return { events: cached.events, sources: cached.sources };
@@ -40,46 +39,30 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     const ai = new GoogleGenAI({ apiKey });
     const modelName = "gemini-3-flash-preview";
     
-    let categoryInstruction = "";
-    if (category && category !== 'All') {
-      categoryInstruction = `CRITICAL: Only return events that strictly belong to the "${category}" category.`;
-    } else {
-      categoryInstruction = `Return a diverse mix of events across all categories (Sports, Family, Food, etc.). Identify the most popular/trending ones and mark them as isTrending: true. List trending events at the beginning of the array.`;
-    }
+    // Explicitly include High School and Youth Sports in the Sports category
+    const categoryInstruction = category === 'Sports' 
+      ? `Include professional, collegiate, LOCAL HIGH SCHOOL, and YOUTH sports (football, basketball, soccer, baseball). Focus on game schedules for schools in ${cityName}.` 
+      : (category && category !== 'All' 
+          ? `Strictly filter for ${category}.` 
+          : `Diverse mix: local festivals, High School/Youth sports, arts, and nightlife.`);
 
-    let dateInstruction = "";
-    if (startDate || endDate) {
-      dateInstruction = `Only include events occurring ${startDate ? `after ${startDate}` : ''} ${endDate ? `and before ${endDate}` : ''}.`;
-    }
+    const dateInstruction = (startDate || endDate) 
+      ? `Dates: ${startDate || 'today'} to ${endDate || 'future'}.` 
+      : "Upcoming this week/month.";
 
-    let keywordInstruction = keyword ? `The events must relate to the following keyword: "${keyword}".` : "";
-
-    let prompt = `Find 10 events for ${cityName}. 
-    INTEGRATE GOOGLE TRENDS: Use search data to prioritize what is popular "Inside the metro" right now.
-    
+    const prompt = `Find 10 unique local events for ${cityName} (Page ${page}).
     ${categoryInstruction}
     ${dateInstruction}
-    ${keywordInstruction}
-    
-    ${page > 1 ? `List 10 *more* unique events (page ${page}).` : ""}
+    ${keyword ? `Keyword: ${keyword}` : ""}
 
-    MANDATORY NICHE TARGETS FOR EACH CATEGORY:
-    - COMMUNITY: networking, entrepreneurship, social gatherings, product launches.
-    - OUTDOORS: kayaking, mountain climbing, trails, trail runs, walking trails, running trails, rafting, white water rafting, caves & lakes, waterfalls, National parks, beaches, zip lining, rock climbing, cliffs, hills, forests, islands, wildlife attractions, landscapes.
-    - VISITOR ATTRACTIONS: golf courses, amusement parks, water parks, museums, festivals and fairs, music halls, national parks, historical landmarks, religious sites, shopping districts, Place of worship, culinary classes, heritage attractions, exhibitions, petting animals, zoo, aquariums, casinos, haunted houses, theme parks, concert hall & theatre.
-    - NIGHT LIFE: Cigar bars, speakeasies, karaoke, dance classes.
-    - SPORTS: Pro/Collegiate/Youth Soccer, Body Building, Wrestling, Baseball, Rugby, Lacrosse, etc.
-    - FOOD & DRINK: Soul Food, Italian, Seafood, BBQ, Breweries.
-
-    RULES:
-    1. DATE: MUST be MM/DD/YYYY.
-    2. TIME: Include time (e.g., 07:00 PM). If not listed, infer from description.
-    3. VENUE: Identify specific venue or district name.
-    4. COORDINATES: Provide accurate latitude and longitude for the venue.
-    5. AGE RESTRICTION: Identify if the event has age limits (e.g., "All Ages", "21+", "18+"). If unsure, default to "All Ages".
-    6. NO "Trending" category label. Map to the specific categories provided.
-
-    Return as JSON array: title, category, description, date (MM/DD/YYYY), time, location, venue, cityName, sourceUrl, isTrending (boolean), lat (number), lng (number), ageRestriction (string).`;
+    MANDATORY: 
+    - If category is Sports, include High School (UIL/OSSAN) and Youth athletic events.
+    - Format: MM/DD/YYYY.
+    - JSON Array only.
+    - ageRestriction: "All Ages", "21+", "18+".
+    - isTrending: true for popular picks.
+    - Include lat/lng for mapping.
+    - Category must match: Sports, Family Activities, Entertainment, Food & Drink, Night Life, Arts & Culture, Outdoors, Community.`;
 
     const response = await ai.models.generateContent({
       model: modelName,
@@ -95,7 +78,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
               title: { type: Type.STRING },
               category: { type: Type.STRING },
               description: { type: Type.STRING },
-              date: { type: Type.STRING, description: "Format: MM/DD/YYYY" },
+              date: { type: Type.STRING },
               time: { type: Type.STRING },
               location: { type: Type.STRING },
               venue: { type: Type.STRING },
@@ -106,7 +89,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
               lng: { type: Type.NUMBER },
               ageRestriction: { type: Type.STRING }
             },
-            required: ["title", "category", "description", "location", "date", "lat", "lng"]
+            required: ["title", "category", "description", "location", "date", "lat", "lng", "ageRestriction"]
           }
         }
       },
@@ -116,7 +99,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     const rawEvents = JSON.parse(jsonStr);
     const events: EventActivity[] = rawEvents.map((e: any, index: number) => ({
       ...e,
-      id: `${cityName}-${index}-${Math.random().toString(36).substr(2, 6)}`
+      id: `${cityName}-${page}-${index}-${Date.now()}`
     }));
 
     const sources: GroundingSource[] = [];
@@ -128,7 +111,6 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     }
 
     eventCache.set(cacheKey, { events, sources, timestamp: Date.now() });
-
     return { events, sources };
   } catch (error) {
     console.error("Fetch error:", error);

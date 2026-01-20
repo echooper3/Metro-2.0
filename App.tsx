@@ -4,7 +4,7 @@ import Layout from './components/Layout';
 import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
-import { CITIES, CATEGORIES } from './constants';
+import { CITIES, CATEGORIES, SEED_EVENTS } from './constants';
 import { City, AppView, EventActivity, Category, GroundingSource } from './types';
 import { fetchEvents, FetchOptions } from './services/geminiService';
 
@@ -26,6 +26,7 @@ const App: React.FC = () => {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isSortingByDistance, setIsSortingByDistance] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -49,7 +50,7 @@ const App: React.FC = () => {
   }, []);
 
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371; // km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -59,41 +60,25 @@ const App: React.FC = () => {
     return R * c;
   };
 
-  const handleToggleDistanceSort = () => {
-    if (!userLocation) {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            setIsSortingByDistance(true);
-          },
-          (err) => {
-            console.error("Geolocation error:", err);
-            alert("Could not access your location. Please check your browser permissions.");
-          }
-        );
-      } else {
-        alert("Geolocation is not supported by your browser.");
-      }
-    } else {
-      setIsSortingByDistance(!isSortingByDistance);
-    }
-  };
-
-  const toggleSaveEvent = useCallback((event: EventActivity) => {
-    setSavedEventIds(prev => {
-      if (prev.includes(event.id)) {
-        return prev.filter(id => id !== event.id);
-      }
-      return [...prev, event.id];
-    });
+  const preFetchNextPage = useCallback((cityName: string | 'All', options: FetchOptions, nextPage: number) => {
+    fetchEvents(cityName, { ...options, page: nextPage }).catch(() => {});
   }, []);
 
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}, append = false) => {
     if (append) {
       setIsLoadingMore(true);
     } else {
-      setIsLoading(true);
+      // INSTANT RENDERING: If we have seeds for this city, show them immediately
+      const cityId = cityName.toLowerCase().replace(/\s+/g, '');
+      const seeds = (cityName !== 'All' && SEED_EVENTS[cityId]) ? SEED_EVENTS[cityId] : [];
+      
+      if (seeds.length > 0) {
+        setEvents(seeds);
+        setIsRefreshing(true); // Indicate we are getting fresher results
+      } else {
+        setIsLoading(true);
+      }
+      
       setCurrentPage(1);
       setSelectedLocation('All Locations');
       setHasMore(true);
@@ -107,19 +92,52 @@ const App: React.FC = () => {
       processedEvents = [...data.events].sort((a, b) => (b.isTrending ? 1 : 0) - (a.isTrending ? 1 : 0));
     }
 
-    // Assume if we got less than 10, there are no more
-    if (processedEvents.length < 10) setHasMore(false);
+    if (processedEvents.length < 5) setHasMore(false);
 
     if (append) {
       setEvents(prev => [...prev, ...processedEvents]);
       setCurrentPage(targetPage);
       setIsLoadingMore(false);
     } else {
+      // Background update: replace seeds with live data
       setEvents(processedEvents);
       setSources(data.sources);
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [activeCategory, currentPage]);
+
+    if (processedEvents.length >= 8) {
+      preFetchNextPage(cityName, options, targetPage + 1);
+    }
+  }, [activeCategory, currentPage, preFetchNextPage]);
+
+  const toggleSaveEvent = useCallback((event: EventActivity) => {
+    setSavedEventIds(prev => {
+      if (prev.includes(event.id)) {
+        return prev.filter(id => id !== event.id);
+      }
+      return [...prev, event.id];
+    });
+  }, []);
+
+  const handleToggleDistanceSort = () => {
+    if (!userLocation) {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            setIsSortingByDistance(true);
+          },
+          (err) => {
+            console.error("Geolocation error:", err);
+            alert("Please enable location permissions in your browser settings to sort by distance.");
+          }
+        );
+      }
+    } else {
+      setIsSortingByDistance(!isSortingByDistance);
+    }
+  };
 
   const venuesList = useMemo(() => {
     const venues = new Set<string>();
@@ -267,6 +285,13 @@ const App: React.FC = () => {
               </button>
               <h2 className="text-5xl md:text-7xl font-black mb-4 tracking-tighter leading-none">{view === AppView.SEARCH_RESULTS ? `Search: "${searchQuery}"` : selectedCity?.name}</h2>
               {selectedCity && <p className="text-xl text-gray-400 max-w-3xl font-medium leading-relaxed">{selectedCity.description}</p>}
+              
+              {isRefreshing && (
+                <div className="mt-6 flex items-center gap-3 text-orange-400 font-bold text-xs uppercase tracking-widest animate-pulse">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full animate-ping"></div>
+                  Updating with fresh live data...
+                </div>
+              )}
             </div>
           </div>
 
@@ -369,13 +394,13 @@ const App: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
                       </div>
-                      <h3 className="text-xl font-black text-gray-900 mb-2">No experiences found</h3>
-                      <p className="text-gray-500">Try adjusting your filters or expanding your search.</p>
+                      <h3 className="text-xl font-black text-gray-900 mb-2">No local experiences found</h3>
+                      <p className="text-gray-500">Try adjusting your filters or expanding your search for {selectedCity?.name || 'the metro'}.</p>
                     </div>
                   )}
                 </div>
                 
-                {hasMore && sortedAndFilteredEvents.length >= 10 && (
+                {hasMore && sortedAndFilteredEvents.length >= 8 && (
                   <div className="mt-16 flex justify-center">
                     <button 
                       onClick={handleLoadMore}
@@ -385,7 +410,7 @@ const App: React.FC = () => {
                       {isLoadingMore ? (
                         <>
                           <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
-                          Loading More...
+                          Loading...
                         </>
                       ) : (
                         <>
@@ -454,9 +479,16 @@ const App: React.FC = () => {
             </header>
 
             <div className="flex-grow prose prose-orange max-w-none mb-10 overflow-y-auto text-pretty">
-              <div className="mb-8">
-                <h4 className="text-xs font-black uppercase tracking-widest text-orange-600 mb-2">Age Requirement</h4>
-                <p className="text-gray-900 font-black">{detailedEvent.ageRestriction || 'All Ages'}</p>
+              <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
+                <div>
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-orange-600 mb-1">Age Requirement</h4>
+                  <p className="text-xl font-black text-gray-900">{detailedEvent.ageRestriction || 'All Ages'}</p>
+                </div>
+                <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center">
+                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
               </div>
               <h4 className="text-xs font-black uppercase tracking-widest text-orange-600 mb-2">Description</h4>
               <p className="text-gray-600 text-lg leading-relaxed font-medium">{detailedEvent.description}</p>
