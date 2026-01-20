@@ -5,13 +5,22 @@ import { EventActivity, GroundingSource } from "../types";
 const eventCache = new Map<string, { events: EventActivity[], sources: GroundingSource[], timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour cache
 
+// Track quota status globally to avoid redundant 429 triggers
+let isQuotaExhausted = false;
+let quotaResetTime = 0;
+
 const getApiKey = () => {
   try {
-    // Check if process.env exists and has the key
-    return process.env.API_KEY || '';
+    return (typeof process !== 'undefined' && process.env.API_KEY) || '';
   } catch (e) {
     return '';
   }
+};
+
+const extractJson = (text: string) => {
+  const jsonMatch = text.match(/\[[\s\S]*\]/);
+  if (jsonMatch) return jsonMatch[0];
+  return text.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
 export interface FetchOptions {
@@ -23,13 +32,24 @@ export interface FetchOptions {
   userLocation?: { latitude: number; longitude: number };
 }
 
+export const getQuotaStatus = () => ({
+  isExhausted: isQuotaExhausted && Date.now() < quotaResetTime,
+  remainingTime: Math.max(0, quotaResetTime - Date.now())
+});
+
 /**
- * Fetches events from Gemini. If API_KEY is missing or fetch fails, 
- * returns null to indicate that the caller should stick with seed data.
+ * Fetches events from Gemini. 
+ * Detects 429 Quota Exhaustion and handles it gracefully.
  */
 export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[] } | null> => {
   const { category, startDate, endDate, keyword, page = 1 } = options;
   const cacheKey = JSON.stringify({ cityName, category, startDate, endDate, keyword, page });
+
+  // Check Quota Standby
+  if (isQuotaExhausted && Date.now() < quotaResetTime) {
+    console.warn("Inside The Metro: AI Sourcing in Standby Mode due to rate limits.");
+    return null;
+  }
 
   const cached = eventCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
@@ -37,37 +57,28 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
   }
 
   const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn("Inside The Metro: API_KEY is missing. Using pre-populated seed data only.");
-    return null; 
-  }
+  if (!apiKey) return null; 
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const modelName = "gemini-3-flash-preview";
     
-    const categoryInstruction = category === 'Sports' 
-      ? `Include professional, collegiate, LOCAL HIGH SCHOOL (UIL/OSSAA), and YOUTH sports. Focus on actual game schedules for ${cityName}.` 
-      : (category && category !== 'All' 
-          ? `Filter for ${category}.` 
-          : `Include High School/Youth sports, local festivals, and nightlife.`);
+    let categoryConstraint = "";
+    if (category && category !== 'All') {
+      categoryConstraint = `ONLY include events that strictly fall under the category: "${category}".`;
+    } else {
+      categoryConstraint = `Include a diverse mix of all categories. Prioritize trending/popular events.`;
+    }
 
-    const dateInstruction = (startDate || endDate) 
-      ? `Range: ${startDate || 'today'} to ${endDate || 'future'}.` 
-      : "Focus on the next 7-14 days.";
-
-    const prompt = `Source 10 unique events in ${cityName} (Page ${page}).
-    ${categoryInstruction}
-    ${dateInstruction}
-    ${keyword ? `Keyword: ${keyword}` : ""}
-
-    MANDATORY: 
-    - High School Sports (football/basketball/soccer) MUST be included in 'Sports' or 'All'.
-    - Format: MM/DD/YYYY.
-    - Output: JSON Array.
-    - ageRestriction: "All Ages", "21+", "18+".
-    - isTrending: true for popular/rivalry games.
-    - Category must match: Sports, Family Activities, Entertainment, Food & Drink, Night Life, Arts & Culture, Outdoors, Community.`;
+    const prompt = `Act as a local event concierge for ${cityName}. 
+    Provide 10 unique, real-world events happening in or near ${cityName} for Page ${page}.
+    
+    Constraints:
+    - ${categoryConstraint}
+    - Dates: ${startDate || 'Today'} to ${endDate || 'the next month'}.
+    - Keyword: ${keyword || 'None'}
+    
+    Return a JSON array of objects with fields: title, category, description, date (MM/DD/YYYY), time, location, venue, cityName, sourceUrl, isTrending (boolean), lat, lng, ageRestriction.`;
 
     const response = await ai.models.generateContent({
       model: modelName,
@@ -94,14 +105,15 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
               lng: { type: Type.NUMBER },
               ageRestriction: { type: Type.STRING }
             },
-            required: ["title", "category", "description", "location", "date", "lat", "lng", "ageRestriction"]
+            required: ["title", "category", "description", "location", "date", "lat", "lng"]
           }
         }
       },
     });
 
-    const jsonStr = response.text.trim();
-    const rawEvents = JSON.parse(jsonStr);
+    const cleanJson = extractJson(response.text);
+    const rawEvents = JSON.parse(cleanJson);
+    
     const events: EventActivity[] = rawEvents.map((e: any, index: number) => ({
       ...e,
       id: `live-${cityName}-${page}-${index}-${Date.now()}`
@@ -117,9 +129,19 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
 
     const result = { events, sources };
     eventCache.set(cacheKey, { ...result, timestamp: Date.now() });
+    
+    // Clear standby if it was set
+    isQuotaExhausted = false;
+    
     return result;
-  } catch (error) {
-    console.error("Gemini Sourcing Error:", error);
-    return null; // Return null so UI knows to keep the seed data
+  } catch (error: any) {
+    // Handle 429 RESOURCE_EXHAUSTED
+    if (error?.message?.includes('429') || error?.status === 429 || error?.code === 429) {
+      console.error("Gemini API: Quota Exhausted. Entering standby mode.");
+      isQuotaExhausted = true;
+      // Set standby for 15 minutes or until next cycle
+      quotaResetTime = Date.now() + (15 * 60 * 1000); 
+    }
+    return null;
   }
 };
