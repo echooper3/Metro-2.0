@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Layout from './components/Layout';
 import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
@@ -17,35 +17,77 @@ const App: React.FC = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<string>('All Locations');
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [detailedEvent, setDetailedEvent] = useState<EventActivity | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [savedEventIds, setSavedEventIds] = useState<string[]>([]);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isSortingByDistance, setIsSortingByDistance] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  
+  const modalRef = useRef<HTMLDivElement>(null);
 
-  // Load favorites from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('metro_favorites');
     if (stored) {
-      try {
-        setSavedEventIds(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
+      try { setSavedEventIds(JSON.parse(stored)); } catch (e) {}
     }
   }, []);
 
-  // Sync favorites to localStorage
   useEffect(() => {
     localStorage.setItem('metro_favorites', JSON.stringify(savedEventIds));
   }, [savedEventIds]);
 
-  const toggleSaveEvent = (event: EventActivity) => {
-    setSavedEventIds(prev => 
-      prev.includes(event.id) 
-        ? prev.filter(id => id !== event.id) 
-        : [...prev, event.id]
-    );
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDetailedEvent(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
+
+  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   };
+
+  const handleToggleDistanceSort = () => {
+    if (!userLocation) {
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            setIsSortingByDistance(true);
+          },
+          (err) => {
+            console.error("Geolocation error:", err);
+            alert("Could not access your location. Please check your browser permissions.");
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by your browser.");
+      }
+    } else {
+      setIsSortingByDistance(!isSortingByDistance);
+    }
+  };
+
+  const toggleSaveEvent = useCallback((event: EventActivity) => {
+    setSavedEventIds(prev => {
+      if (prev.includes(event.id)) {
+        return prev.filter(id => id !== event.id);
+      }
+      return [...prev, event.id];
+    });
+  }, []);
 
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}, append = false) => {
     if (append) {
@@ -53,25 +95,65 @@ const App: React.FC = () => {
     } else {
       setIsLoading(true);
       setCurrentPage(1);
+      setSelectedLocation('All Locations');
+      setHasMore(true);
     }
 
-    const data = await fetchEvents(cityName, { ...options, page: append ? currentPage + 1 : 1 });
+    const targetPage = append ? currentPage + 1 : 1;
+    const data = await fetchEvents(cityName, { ...options, page: targetPage });
     
+    let processedEvents = data.events;
+    if (activeCategory === 'All') {
+      processedEvents = [...data.events].sort((a, b) => (b.isTrending ? 1 : 0) - (a.isTrending ? 1 : 0));
+    }
+
+    // Assume if we got less than 10, there are no more
+    if (processedEvents.length < 10) setHasMore(false);
+
     if (append) {
-      setEvents(prev => [...prev, ...data.events]);
-      setSources(prev => {
-        const existingUris = new Set(prev.map(s => s.uri));
-        const newSources = data.sources.filter(s => !existingUris.has(s.uri));
-        return [...prev, ...newSources];
-      });
-      setCurrentPage(prev => prev + 1);
+      setEvents(prev => [...prev, ...processedEvents]);
+      setCurrentPage(targetPage);
       setIsLoadingMore(false);
     } else {
-      setEvents(data.events);
+      setEvents(processedEvents);
       setSources(data.sources);
       setIsLoading(false);
     }
-  }, [currentPage]);
+  }, [activeCategory, currentPage]);
+
+  const venuesList = useMemo(() => {
+    const venues = new Set<string>();
+    events.forEach(e => {
+      const v = e.venue || e.location;
+      if (v && v.length < 40) venues.add(v);
+    });
+    return ['All Locations', ...Array.from(venues)].sort();
+  }, [events]);
+
+  const sortedAndFilteredEvents = useMemo(() => {
+    let result = [...events];
+    
+    if (userLocation) {
+      result = result.map(e => ({
+        ...e,
+        distance: (e.lat && e.lng) ? getDistance(userLocation.lat, userLocation.lng, e.lat, e.lng) : undefined
+      }));
+    }
+
+    if (selectedLocation !== 'All Locations') {
+      result = result.filter(e => (e.venue === selectedLocation || e.location === selectedLocation));
+    }
+
+    if (isSortingByDistance && userLocation) {
+      result.sort((a, b) => {
+        if (a.distance === undefined) return 1;
+        if (b.distance === undefined) return -1;
+        return a.distance - b.distance;
+      });
+    }
+
+    return result;
+  }, [events, selectedLocation, isSortingByDistance, userLocation]);
 
   const handleCitySelect = (city: City) => {
     setSelectedCity(city);
@@ -79,7 +161,7 @@ const App: React.FC = () => {
     setActiveCategory('All');
     setSearchQuery('');
     setDateRange({ start: '', end: '' });
-    loadCityEvents(city.name);
+    loadCityEvents(city.name, { category: 'All' });
   };
 
   const handleGlobalSearch = (query: string) => {
@@ -87,290 +169,231 @@ const App: React.FC = () => {
     setView(AppView.SEARCH_RESULTS);
     setSelectedCity(null);
     setActiveCategory('All');
-    loadCityEvents('All', { keyword: query });
+    setDateRange({ start: '', end: '' });
+    loadCityEvents('All', { keyword: query, category: 'All' });
+  };
+
+  const handleCategoryClick = (cat: Category) => {
+    setActiveCategory(cat);
+    loadCityEvents(selectedCity?.name || 'All', { 
+      category: cat,
+      startDate: dateRange.start || undefined, 
+      endDate: dateRange.end || undefined,
+      keyword: searchQuery || undefined
+    });
   };
 
   const handleDateChange = (type: 'start' | 'end', val: string) => {
     const newRange = { ...dateRange, [type]: val };
     setDateRange(newRange);
-    const cityName = selectedCity ? selectedCity.name : 'All';
-    loadCityEvents(cityName, { 
-      category: activeCategory, 
-      startDate: newRange.start, 
-      endDate: newRange.end,
-      keyword: searchQuery
+    loadCityEvents(selectedCity?.name || 'All', { 
+      category: activeCategory,
+      startDate: newRange.start || undefined, 
+      endDate: newRange.end || undefined,
+      keyword: searchQuery || undefined
     });
   };
 
   const clearDates = () => {
-    const newRange = { start: '', end: '' };
-    setDateRange(newRange);
-    const cityName = selectedCity ? selectedCity.name : 'All';
-    loadCityEvents(cityName, { 
-      category: activeCategory, 
-      startDate: '', 
-      endDate: '',
-      keyword: searchQuery
-    });
-  };
-
-  const handleCategoryChange = (cat: Category) => {
-    setActiveCategory(cat);
-    const cityName = selectedCity ? selectedCity.name : 'All';
-    loadCityEvents(cityName, { 
-      keyword: searchQuery,
-      category: cat,
-      startDate: dateRange.start, 
-      endDate: dateRange.end 
+    setDateRange({ start: '', end: '' });
+    loadCityEvents(selectedCity?.name || 'All', { 
+      category: activeCategory,
+      keyword: searchQuery || undefined
     });
   };
 
   const handleLoadMore = () => {
-    const cityName = selectedCity ? selectedCity.name : 'All';
-    const options: FetchOptions = {
+    loadCityEvents(selectedCity?.name || 'All', {
       category: activeCategory,
-      startDate: dateRange.start,
-      endDate: dateRange.end,
-      keyword: searchQuery
-    };
-    loadCityEvents(cityName, options, true);
+      startDate: dateRange.start || undefined,
+      endDate: dateRange.end || undefined,
+      keyword: searchQuery || undefined
+    }, true);
   };
 
   const handleHome = () => {
     setView(AppView.LANDING);
     setSelectedCity(null);
     setEvents([]);
-    setSearchQuery('');
-    setActiveCategory('All');
     setDateRange({ start: '', end: '' });
+    setIsSortingByDistance(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const addToCalendar = (event: EventActivity) => {
+    const title = encodeURIComponent(event.title);
+    const details = encodeURIComponent(event.description);
+    const location = encodeURIComponent(event.location);
+    window.open(`https://www.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${location}`, '_blank');
+  };
+
   return (
-    <Layout 
-      onHome={handleHome} 
-      onAuth={() => setShowAuthModal(true)}
-      onSearch={handleGlobalSearch}
-    >
+    <Layout onHome={handleHome} onAuth={() => setShowAuthModal(true)} onSearch={handleGlobalSearch}>
       {view === AppView.LANDING && (
         <div className="animate-in fade-in duration-700">
           <section className="relative h-[700px] flex items-center justify-center overflow-hidden bg-gray-950">
-            <img 
-              src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1920" 
-              className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale"
-              alt="Metro architecture"
-            />
+            <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1920" className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" alt="" />
             <div className="relative z-10 text-center max-w-4xl px-4">
-              <span className="text-orange-500 font-black tracking-[0.3em] uppercase mb-6 block text-sm">Real-time Activity Sourcing</span>
+              <span className="text-orange-500 font-black tracking-[0.3em] uppercase mb-6 block text-sm">Metropolitan Sourcing & Discovery</span>
               <h2 className="text-6xl md:text-8xl font-black text-white mb-8 leading-[0.9] tracking-tighter">
-                Discover Life <br/>
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-400 to-orange-600">Inside The Metro</span>
+                Live Your Best <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400">Inside The Metro</span>
               </h2>
-              <p className="text-lg md:text-xl text-gray-400 mb-12 max-w-2xl mx-auto leading-relaxed font-medium">
-                The ultimate guide to sports, music, and local culture across Tulsa, Oklahoma City, Dallas, and Houston.
-              </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-                <button 
-                  onClick={() => setShowAuthModal(true)}
-                  className="w-full sm:w-auto px-12 py-5 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-700 transition-all transform hover:-translate-y-1 shadow-2xl shadow-orange-900/40"
-                >
-                  Join the Community
-                </button>
-                <a href="#city-selection" className="text-white font-black flex items-center hover:text-orange-400 transition-colors py-4 group uppercase text-xs tracking-widest">
-                  Select a City
-                  <svg className="w-5 h-5 ml-3 group-hover:translate-y-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                  </svg>
-                </a>
+                <button onClick={() => setShowAuthModal(true)} className="px-12 py-5 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-700 transition-all shadow-2xl shadow-orange-900/40">Join the Community</button>
+                <a href="#city-selection" className="text-white font-black flex items-center hover:text-orange-400 transition-colors py-4 group uppercase text-xs tracking-widest">Select a City <svg className="w-5 h-5 ml-3 group-hover:translate-y-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg></a>
               </div>
             </div>
-            <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-white to-transparent" />
           </section>
-
           <section id="city-selection" className="max-w-7xl mx-auto px-4 py-24">
-            <div className="mb-20 text-center">
-              <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-6 tracking-tight">Metropolitan Hubs</h3>
-              <p className="text-gray-500 text-lg max-w-2xl mx-auto font-medium">
-                Sourcing the pulse of the Southwest. Select your region to see what's happening right now.
-              </p>
-            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-              {CITIES.map(city => (
-                <CityCard key={city.id} city={city} onClick={handleCitySelect} />
-              ))}
+              {CITIES.map(city => <CityCard key={city.id} city={city} onClick={handleCitySelect} />)}
             </div>
           </section>
         </div>
       )}
 
       {(view === AppView.CITY_DETAIL || view === AppView.SEARCH_RESULTS) && (
-        <div className="animate-in slide-in-from-bottom-4 duration-500 pb-24">
+        <div className="pb-24">
           <div className="bg-gray-950 pt-32 pb-24 text-white relative overflow-hidden">
-             {selectedCity && (
-               <img 
-                src={selectedCity.image} 
-                className="absolute inset-0 w-full h-full object-cover opacity-10 blur-sm scale-110"
-                alt={selectedCity.name}
-              />
-             )}
+            <div className="absolute top-0 right-0 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+            
             <div className="max-w-7xl mx-auto px-4 relative z-10">
               <button 
-                onClick={handleHome}
-                className="inline-flex items-center text-xs font-black uppercase tracking-widest text-orange-500 hover:text-orange-400 mb-10 transition-colors bg-white/5 px-6 py-3 rounded-full backdrop-blur-md group"
+                onClick={handleHome} 
+                className="text-xs font-black uppercase tracking-widest text-orange-500 mb-10 bg-white/5 hover:bg-white/10 px-6 py-3 rounded-full transition-colors"
+                aria-label="Back to home"
               >
-                <svg className="w-4 h-4 mr-3 rotate-180 transform group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-                Back to All Cities
+                ← Back to Metro Hubs
               </button>
-              
-              <h2 className="text-5xl md:text-7xl font-black mb-8 tracking-tighter leading-none">
-                {view === AppView.SEARCH_RESULTS 
-                  ? `Search: "${searchQuery}"` 
-                  : `${selectedCity?.name}, ${selectedCity?.state}`}
-              </h2>
-              {selectedCity && (
-                <p className="text-xl text-gray-400 max-w-3xl leading-relaxed font-medium">
-                  {selectedCity.description}
-                </p>
-              )}
+              <h2 className="text-5xl md:text-7xl font-black mb-4 tracking-tighter leading-none">{view === AppView.SEARCH_RESULTS ? `Search: "${searchQuery}"` : selectedCity?.name}</h2>
+              {selectedCity && <p className="text-xl text-gray-400 max-w-3xl font-medium leading-relaxed">{selectedCity.description}</p>}
             </div>
           </div>
 
           <div className="max-w-7xl mx-auto px-4 mt-16">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 mb-12 pb-10 border-b border-gray-100">
-              {/* Category Filter */}
-              <div className="flex overflow-x-auto scrollbar-hide space-x-3 py-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="flex flex-col space-y-8 mb-12 border-b border-gray-100 pb-10">
+              <div className="flex overflow-x-auto scrollbar-hide space-x-3 w-full" aria-label="Category filter">
                 {CATEGORIES.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => handleCategoryChange(cat)}
-                    title={`View ${cat} events`}
-                    className={`px-6 py-3 rounded-2xl whitespace-nowrap text-xs font-black uppercase tracking-widest transition-all ${
-                      activeCategory === cat 
-                      ? 'bg-orange-600 text-white shadow-xl shadow-orange-200' 
-                      : 'bg-white text-gray-500 border border-gray-100 hover:border-orange-500 hover:text-orange-600'
-                    }`}
+                  <button 
+                    key={cat} 
+                    onClick={() => handleCategoryClick(cat)} 
+                    className={`px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all shrink-0 ${activeCategory === cat ? 'bg-orange-600 text-white shadow-xl shadow-orange-200' : 'bg-white text-gray-500 border border-gray-100 hover:border-orange-200'}`}
                   >
                     {cat}
                   </button>
                 ))}
               </div>
+              
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-4 py-2.5 rounded-2xl focus-within:border-orange-300 transition-colors">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">From</span>
+                    <input 
+                      type="date" 
+                      value={dateRange.start} 
+                      onChange={(e) => handleDateChange('start', e.target.value)} 
+                      className="bg-transparent text-xs font-bold text-gray-700 outline-none" 
+                      aria-label="From date" 
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-4 py-2.5 rounded-2xl focus-within:border-orange-300 transition-colors">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">To</span>
+                    <input 
+                      type="date" 
+                      value={dateRange.end} 
+                      onChange={(e) => handleDateChange('end', e.target.value)} 
+                      className="bg-transparent text-xs font-bold text-gray-700 outline-none" 
+                      aria-label="To date" 
+                    />
+                  </div>
+                  
+                  {(dateRange.start || dateRange.end) && (
+                    <button 
+                      onClick={clearDates} 
+                      className="flex items-center gap-2 px-4 py-2.5 bg-orange-50 text-orange-600 border border-orange-100 hover:bg-orange-600 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+                      title="Clear date range" 
+                      aria-label="Clear date range filters"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                      Clear Dates
+                    </button>
+                  )}
 
-              {/* Date Filter */}
-              <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-3xl relative border border-gray-100 shadow-inner">
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1.5 mb-1">From</span>
-                  <input 
-                    type="date" 
-                    value={dateRange.start}
-                    onChange={(e) => handleDateChange('start', e.target.value)}
-                    className="bg-transparent text-sm font-black text-gray-700 outline-none px-1.5 py-0.5 border-b-2 border-transparent focus:border-orange-500" 
-                  />
-                </div>
-                <div className="w-px h-10 bg-gray-200 mx-1" />
-                <div className="flex flex-col">
-                  <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1.5 mb-1">Until</span>
-                  <input 
-                    type="date" 
-                    value={dateRange.end}
-                    onChange={(e) => handleDateChange('end', e.target.value)}
-                    className="bg-transparent text-sm font-black text-gray-700 outline-none px-1.5 py-0.5 border-b-2 border-transparent focus:border-orange-500" 
-                  />
-                </div>
-                {(dateRange.start || dateRange.end) && (
                   <button 
-                    onClick={clearDates}
-                    className="ml-4 p-2.5 text-orange-600 hover:bg-orange-100 rounded-full transition-all"
-                    title="Reset date filters"
+                    onClick={handleToggleDistanceSort}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${
+                      isSortingByDistance ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-orange-50 hover:text-orange-600'
+                    }`}
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     </svg>
+                    {isSortingByDistance ? 'Sorting by Distance' : 'Sort by Distance'}
                   </button>
-                )}
+                </div>
+
+                <div className="w-full md:w-auto flex items-center gap-3">
+                  <span className="hidden lg:block text-[10px] font-black uppercase tracking-widest text-gray-400">At</span>
+                  <select 
+                    value={selectedLocation} 
+                    onChange={(e) => setSelectedLocation(e.target.value)}
+                    className="bg-gray-50 border border-gray-100 text-xs font-black uppercase tracking-widest text-gray-600 px-6 py-3 rounded-2xl outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/5 transition-all w-full md:w-64"
+                    aria-label="Filter by venue or location within the city"
+                  >
+                    {venuesList.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
 
             {isLoading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {[...Array(6)].map((_, i) => (
-                  <EventSkeleton key={i} />
-                ))}
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">{[...Array(6)].map((_, i) => <EventSkeleton key={i} />)}</div>
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {events.length > 0 ? (
-                    events.map(event => (
+                  {sortedAndFilteredEvents.length > 0 ? (
+                    sortedAndFilteredEvents.map(event => (
                       <EventItem 
                         key={event.id} 
                         event={event} 
                         showCity={view === AppView.SEARCH_RESULTS}
                         isSaved={savedEventIds.includes(event.id)}
                         onToggleSave={toggleSaveEvent}
+                        onOpenDetails={setDetailedEvent}
                       />
                     ))
                   ) : (
-                    <div className="col-span-full py-40 text-center bg-gray-50 rounded-[3rem] border border-dashed border-gray-200">
-                      <div className="text-7xl mb-8 grayscale opacity-50">🏜️</div>
-                      <h3 className="text-3xl font-black text-gray-900 mb-4 tracking-tight">The Metro is Quiet...</h3>
-                      <p className="text-gray-500 max-w-sm mx-auto font-medium">No activities match your current filters. Try adjusting your dates or exploring a different category.</p>
-                      <button 
-                        onClick={() => { setActiveCategory('All'); clearDates(); }}
-                        className="mt-10 px-8 py-3 bg-white border-2 border-orange-600 text-orange-600 font-black rounded-2xl hover:bg-orange-600 hover:text-white transition-all shadow-lg shadow-orange-100"
-                      >
-                        Reset Filters
-                      </button>
+                    <div className="col-span-full py-24 text-center">
+                      <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-50 mb-6">
+                        <svg className="w-10 h-10 text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                      </div>
+                      <h3 className="text-xl font-black text-gray-900 mb-2">No experiences found</h3>
+                      <p className="text-gray-500">Try adjusting your filters or expanding your search.</p>
                     </div>
                   )}
                 </div>
-
-                {isLoadingMore && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-8">
-                    {[...Array(3)].map((_, i) => (
-                      <EventSkeleton key={`more-${i}`} />
-                    ))}
-                  </div>
-                )}
-
-                {events.length > 0 && events.length % 10 === 0 && !isLoadingMore && (
+                
+                {hasMore && sortedAndFilteredEvents.length >= 10 && (
                   <div className="mt-16 flex justify-center">
                     <button 
                       onClick={handleLoadMore}
-                      className="px-12 py-5 bg-white border-2 border-orange-100 text-orange-600 font-black rounded-2xl hover:border-orange-600 transition-all shadow-sm flex items-center group"
+                      disabled={isLoadingMore}
+                      className="px-12 py-5 bg-white border-2 border-gray-100 text-gray-900 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:border-orange-500 hover:text-orange-600 transition-all shadow-sm flex items-center gap-3 disabled:opacity-50"
                     >
-                      Load More Experiences
-                      <svg className="w-5 h-5 ml-3 group-hover:translate-y-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                      </svg>
+                      {isLoadingMore ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+                          Loading More...
+                        </>
+                      ) : (
+                        <>
+                          Explore More
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 13l-7 7-7-7m14-8l-7 7-7-7" /></svg>
+                        </>
+                      )}
                     </button>
-                  </div>
-                )}
-
-                {sources.length > 0 && (
-                  <div className="mt-24 p-12 bg-gray-50 rounded-[3rem] border border-gray-100">
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 mb-8 flex items-center justify-center lg:justify-start">
-                      <span className="w-8 h-px bg-gray-200 mr-4 hidden lg:block" />
-                      Verified Search Grounding
-                      <span className="w-8 h-px bg-gray-200 ml-4 hidden lg:block" />
-                    </h4>
-                    <div className="flex flex-wrap justify-center lg:justify-start gap-4">
-                      {sources.map((source, i) => (
-                        <a 
-                          key={i} 
-                          href={source.uri} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center text-xs font-black text-orange-600 hover:text-white hover:bg-orange-600 bg-white border border-orange-100 px-5 py-2.5 rounded-2xl transition-all shadow-sm hover:-translate-y-0.5"
-                        >
-                          {source.title}
-                          <svg className="w-4 h-4 ml-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                        </a>
-                      ))}
-                    </div>
                   </div>
                 )}
               </>
@@ -379,44 +402,97 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Auth Modal Mock */}
-      {showAuthModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setShowAuthModal(false)} />
-          <div className="relative bg-white rounded-[3rem] w-full max-w-md p-12 shadow-[0_35px_60px_-15px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200">
+      {/* Rich Details Modal */}
+      {detailedEvent && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setDetailedEvent(null)} />
+          <div 
+            ref={modalRef}
+            className="relative bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col"
+          >
             <button 
-              onClick={() => setShowAuthModal(false)}
-              className="absolute top-10 right-10 text-gray-400 hover:text-gray-900 transition-colors"
+              onClick={() => setDetailedEvent(null)} 
+              className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all" 
+              aria-label="Close details"
+              title="Close"
             >
-              <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <div className="text-center mb-12">
-              <div className="w-20 h-20 bg-orange-100 rounded-[2rem] flex items-center justify-center mx-auto mb-8 transform -rotate-6">
-                 <div className="w-12 h-12 bg-orange-600 rounded-xl flex items-center justify-center">
-                    <span className="text-white font-black text-3xl">M</span>
-                  </div>
+            
+            <header className="mb-8 pr-12">
+              <div className="flex gap-2 mb-4">
+                <span className="px-4 py-1.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">{detailedEvent.category}</span>
+                {detailedEvent.ageRestriction && (
+                  <span className="px-4 py-1.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block border border-gray-200">
+                    {detailedEvent.ageRestriction}
+                  </span>
+                )}
               </div>
-              <h2 className="text-4xl font-black text-gray-900 mb-3 tracking-tight">Join the Metro</h2>
-              <p className="text-gray-500 font-bold text-sm uppercase tracking-widest">Insider Access & Alerts</p>
+              <h2 id="modal-title" className="text-3xl md:text-5xl font-black text-gray-900 leading-[1.1] mb-6 tracking-tighter">{detailedEvent.title}</h2>
+              <div className="flex flex-wrap gap-x-8 gap-y-4 text-sm font-bold text-gray-500">
+                <span className="flex items-center">
+                  <svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeWidth={2.5}/></svg>
+                  {detailedEvent.date}
+                </span>
+                {detailedEvent.time && (
+                  <span className="flex items-center">
+                    <svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth={2.5}/></svg>
+                    {detailedEvent.time}
+                  </span>
+                )}
+                <span className="flex items-center">
+                  <svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeWidth={2.5}/></svg>
+                  {detailedEvent.venue || detailedEvent.location}
+                </span>
+                {detailedEvent.distance !== undefined && (
+                  <span className="flex items-center text-orange-600">
+                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A2 2 0 013 15.488V5.512a2 2 0 011.053-1.789L9 1l6 3 5.447-2.724A2 2 0 0121 3.064v9.976a2 2 0 01-1.053 1.789L15 17.5l-6 2.5z" strokeWidth={2.5}/></svg>
+                    {detailedEvent.distance.toFixed(1)} km away
+                  </span>
+                )}
+              </div>
+            </header>
+
+            <div className="flex-grow prose prose-orange max-w-none mb-10 overflow-y-auto text-pretty">
+              <div className="mb-8">
+                <h4 className="text-xs font-black uppercase tracking-widest text-orange-600 mb-2">Age Requirement</h4>
+                <p className="text-gray-900 font-black">{detailedEvent.ageRestriction || 'All Ages'}</p>
+              </div>
+              <h4 className="text-xs font-black uppercase tracking-widest text-orange-600 mb-2">Description</h4>
+              <p className="text-gray-600 text-lg leading-relaxed font-medium">{detailedEvent.description}</p>
             </div>
-            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-2 ml-1">Email</label>
-                <input type="email" placeholder="metro.explorer@email.com" className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-2 border-transparent focus:border-orange-500 focus:bg-white outline-none transition-all font-bold" />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-2 ml-1">Password</label>
-                <input type="password" placeholder="••••••••" className="w-full px-6 py-4 rounded-2xl bg-gray-50 border-2 border-transparent focus:border-orange-500 focus:bg-white outline-none transition-all font-bold" />
-              </div>
-              <button className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-700 transition-all shadow-2xl shadow-orange-200 hover:-translate-y-1 text-lg">
-                Enter The Metro
+
+            <footer className="flex flex-col sm:flex-row gap-4 pt-10 border-t border-gray-100 mt-auto">
+              {detailedEvent.sourceUrl ? (
+                <a 
+                  href={detailedEvent.sourceUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200"
+                  aria-label="Visit official event website"
+                >
+                  Visit Official Site
+                </a>
+              ) : (
+                <a 
+                  href={`https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="flex-1 px-8 py-5 bg-gray-900 text-white font-black rounded-2xl text-center hover:bg-black transition-all shadow-xl shadow-gray-200"
+                  aria-label="Search for more information about this event"
+                >
+                  Search for More Info
+                </a>
+              )}
+              <button 
+                onClick={() => addToCalendar(detailedEvent)} 
+                className="px-8 py-5 bg-gray-50 text-gray-900 border-2 border-gray-200 font-black rounded-2xl flex items-center justify-center hover:border-orange-500 hover:text-orange-600 transition-all group"
+                aria-label="Add event to Google Calendar"
+              >
+                <svg className="w-5 h-5 mr-3 text-gray-400 group-hover:text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                Add to Calendar
               </button>
-            </form>
-            <p className="mt-10 text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed px-6">
-              By joining, you agree to receive real-time updates and accept our <span className="text-orange-600 border-b-2 border-orange-100">Privacy Policy</span>
-            </p>
+            </footer>
           </div>
         </div>
       )}

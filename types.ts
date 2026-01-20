@@ -13,9 +13,16 @@ export interface EventActivity {
   category: string;
   description: string;
   date?: string;
+  time?: string;
   location: string;
+  venue?: string;
   sourceUrl?: string;
   cityName?: string;
+  isTrending?: boolean;
+  lat?: number;
+  lng?: number;
+  distance?: number; // Calculated distance from user in km/miles
+  ageRestriction?: string; // e.g., "All Ages", "21+", "18+"
 }
 
 export interface GroundingSource {
@@ -31,11 +38,10 @@ export enum AppView {
 
 export type Category = 
   | 'All' 
-  | 'Trending' 
   | 'Sports' 
   | 'Family Activities' 
   | 'Entertainment' 
-  | 'Visitor Activities' 
+  | 'Visitor Attractions' 
   | 'Food & Drink' 
   | 'Night Life' 
   | 'Arts & Culture' 

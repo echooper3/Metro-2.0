@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { memo } from 'react';
 import { City } from '../types';
 
 interface CityCardProps {
@@ -7,7 +7,7 @@ interface CityCardProps {
   onClick: (city: City) => void;
 }
 
-const CityCard: React.FC<CityCardProps> = ({ city, onClick }) => {
+const CityCard: React.FC<CityCardProps> = memo(({ city, onClick }) => {
   return (
     <div 
       onClick={() => onClick(city)}
@@ -16,6 +16,7 @@ const CityCard: React.FC<CityCardProps> = ({ city, onClick }) => {
       <img 
         src={city.image} 
         alt={city.name} 
+        loading="lazy"
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
@@ -36,6 +37,6 @@ const CityCard: React.FC<CityCardProps> = ({ city, onClick }) => {
       </div>
     </div>
   );
-};
+});
 
 export default CityCard;
