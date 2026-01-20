@@ -2,12 +2,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EventActivity, GroundingSource } from "../types";
 
-// In-memory cache for instant navigation
 const eventCache = new Map<string, { events: EventActivity[], sources: GroundingSource[], timestamp: number }>();
 const CACHE_TTL = 1000 * 60 * 60; // 1 hour cache
 
 const getApiKey = () => {
   try {
+    // Check if process.env exists and has the key
     return process.env.API_KEY || '';
   } catch (e) {
     return '';
@@ -23,7 +23,11 @@ export interface FetchOptions {
   userLocation?: { latitude: number; longitude: number };
 }
 
-export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[] }> => {
+/**
+ * Fetches events from Gemini. If API_KEY is missing or fetch fails, 
+ * returns null to indicate that the caller should stick with seed data.
+ */
+export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[] } | null> => {
   const { category, startDate, endDate, keyword, page = 1 } = options;
   const cacheKey = JSON.stringify({ cityName, category, startDate, endDate, keyword, page });
 
@@ -32,36 +36,37 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     return { events: cached.events, sources: cached.sources };
   }
 
-  try {
-    const apiKey = getApiKey();
-    if (!apiKey) return { events: [], sources: [] };
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.warn("Inside The Metro: API_KEY is missing. Using pre-populated seed data only.");
+    return null; 
+  }
 
+  try {
     const ai = new GoogleGenAI({ apiKey });
     const modelName = "gemini-3-flash-preview";
     
-    // Explicitly include High School and Youth Sports in the Sports category
     const categoryInstruction = category === 'Sports' 
-      ? `Include professional, collegiate, LOCAL HIGH SCHOOL, and YOUTH sports (football, basketball, soccer, baseball). Focus on game schedules for schools in ${cityName}.` 
+      ? `Include professional, collegiate, LOCAL HIGH SCHOOL (UIL/OSSAA), and YOUTH sports. Focus on actual game schedules for ${cityName}.` 
       : (category && category !== 'All' 
-          ? `Strictly filter for ${category}.` 
-          : `Diverse mix: local festivals, High School/Youth sports, arts, and nightlife.`);
+          ? `Filter for ${category}.` 
+          : `Include High School/Youth sports, local festivals, and nightlife.`);
 
     const dateInstruction = (startDate || endDate) 
-      ? `Dates: ${startDate || 'today'} to ${endDate || 'future'}.` 
-      : "Upcoming this week/month.";
+      ? `Range: ${startDate || 'today'} to ${endDate || 'future'}.` 
+      : "Focus on the next 7-14 days.";
 
-    const prompt = `Find 10 unique local events for ${cityName} (Page ${page}).
+    const prompt = `Source 10 unique events in ${cityName} (Page ${page}).
     ${categoryInstruction}
     ${dateInstruction}
     ${keyword ? `Keyword: ${keyword}` : ""}
 
     MANDATORY: 
-    - If category is Sports, include High School (UIL/OSSAN) and Youth athletic events.
+    - High School Sports (football/basketball/soccer) MUST be included in 'Sports' or 'All'.
     - Format: MM/DD/YYYY.
-    - JSON Array only.
+    - Output: JSON Array.
     - ageRestriction: "All Ages", "21+", "18+".
-    - isTrending: true for popular picks.
-    - Include lat/lng for mapping.
+    - isTrending: true for popular/rivalry games.
     - Category must match: Sports, Family Activities, Entertainment, Food & Drink, Night Life, Arts & Culture, Outdoors, Community.`;
 
     const response = await ai.models.generateContent({
@@ -99,7 +104,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     const rawEvents = JSON.parse(jsonStr);
     const events: EventActivity[] = rawEvents.map((e: any, index: number) => ({
       ...e,
-      id: `${cityName}-${page}-${index}-${Date.now()}`
+      id: `live-${cityName}-${page}-${index}-${Date.now()}`
     }));
 
     const sources: GroundingSource[] = [];
@@ -110,10 +115,11 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
       });
     }
 
-    eventCache.set(cacheKey, { events, sources, timestamp: Date.now() });
-    return { events, sources };
+    const result = { events, sources };
+    eventCache.set(cacheKey, { ...result, timestamp: Date.now() });
+    return result;
   } catch (error) {
-    console.error("Fetch error:", error);
-    return { events: [], sources: [] };
+    console.error("Gemini Sourcing Error:", error);
+    return null; // Return null so UI knows to keep the seed data
   }
 };

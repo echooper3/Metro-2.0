@@ -30,6 +30,7 @@ const App: React.FC = () => {
   
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // Persistence for favorites
   useEffect(() => {
     const stored = localStorage.getItem('metro_favorites');
     if (stored) {
@@ -60,21 +61,17 @@ const App: React.FC = () => {
     return R * c;
   };
 
-  const preFetchNextPage = useCallback((cityName: string | 'All', options: FetchOptions, nextPage: number) => {
-    fetchEvents(cityName, { ...options, page: nextPage }).catch(() => {});
-  }, []);
-
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}, append = false) => {
+    const cityId = cityName.toLowerCase().replace(/\s+/g, '');
+    const seeds = (cityName !== 'All' && SEED_EVENTS[cityId]) ? SEED_EVENTS[cityId] : [];
+
     if (append) {
       setIsLoadingMore(true);
     } else {
-      // INSTANT RENDERING: If we have seeds for this city, show them immediately
-      const cityId = cityName.toLowerCase().replace(/\s+/g, '');
-      const seeds = (cityName !== 'All' && SEED_EVENTS[cityId]) ? SEED_EVENTS[cityId] : [];
-      
+      // INSTANT RENDER: Always show seeds immediately if we have them
       if (seeds.length > 0) {
         setEvents(seeds);
-        setIsRefreshing(true); // Indicate we are getting fresher results
+        setIsRefreshing(true); // Indicate background sync
       } else {
         setIsLoading(true);
       }
@@ -87,29 +84,36 @@ const App: React.FC = () => {
     const targetPage = append ? currentPage + 1 : 1;
     const data = await fetchEvents(cityName, { ...options, page: targetPage });
     
-    let processedEvents = data.events;
-    if (activeCategory === 'All') {
-      processedEvents = [...data.events].sort((a, b) => (b.isTrending ? 1 : 0) - (a.isTrending ? 1 : 0));
-    }
+    if (data) {
+      let processedEvents = data.events;
+      if (activeCategory === 'All') {
+        processedEvents = [...data.events].sort((a, b) => (b.isTrending ? 1 : 0) - (a.isTrending ? 1 : 0));
+      }
 
-    if (processedEvents.length < 5) setHasMore(false);
+      if (processedEvents.length < 5) setHasMore(false);
 
-    if (append) {
-      setEvents(prev => [...prev, ...processedEvents]);
-      setCurrentPage(targetPage);
-      setIsLoadingMore(false);
+      if (append) {
+        setEvents(prev => [...prev, ...processedEvents]);
+        setCurrentPage(targetPage);
+        setIsLoadingMore(false);
+      } else {
+        setEvents(processedEvents);
+        setSources(data.sources);
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     } else {
-      // Background update: replace seeds with live data
-      setEvents(processedEvents);
-      setSources(data.sources);
+      // If data is null (API failure or no key), gracefully exit loading states
+      // but KEEP the seeds that were already rendered.
       setIsLoading(false);
       setIsRefreshing(false);
+      setIsLoadingMore(false);
+      if (!append && seeds.length === 0) {
+         // If no seeds and no data, show empty
+         setEvents([]);
+      }
     }
-
-    if (processedEvents.length >= 8) {
-      preFetchNextPage(cityName, options, targetPage + 1);
-    }
-  }, [activeCategory, currentPage, preFetchNextPage]);
+  }, [activeCategory, currentPage]);
 
   const toggleSaveEvent = useCallback((event: EventActivity) => {
     setSavedEventIds(prev => {
@@ -289,7 +293,7 @@ const App: React.FC = () => {
               {isRefreshing && (
                 <div className="mt-6 flex items-center gap-3 text-orange-400 font-bold text-xs uppercase tracking-widest animate-pulse">
                   <div className="w-2 h-2 bg-orange-500 rounded-full animate-ping"></div>
-                  Updating with fresh live data...
+                  Syncing live event data...
                 </div>
               )}
             </div>
@@ -353,7 +357,7 @@ const App: React.FC = () => {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     </svg>
-                    {isSortingByDistance ? 'Sorting by Distance' : 'Sort by Distance'}
+                    {isSortingByDistance ? 'Distance Sorting' : 'Sort by Distance'}
                   </button>
                 </div>
 
@@ -363,7 +367,6 @@ const App: React.FC = () => {
                     value={selectedLocation} 
                     onChange={(e) => setSelectedLocation(e.target.value)}
                     className="bg-gray-50 border border-gray-100 text-xs font-black uppercase tracking-widest text-gray-600 px-6 py-3 rounded-2xl outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/5 transition-all w-full md:w-64"
-                    aria-label="Filter by venue or location within the city"
                   >
                     {venuesList.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
@@ -439,7 +442,6 @@ const App: React.FC = () => {
               onClick={() => setDetailedEvent(null)} 
               className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all" 
               aria-label="Close details"
-              title="Close"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
@@ -469,12 +471,6 @@ const App: React.FC = () => {
                   <svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeWidth={2.5}/></svg>
                   {detailedEvent.venue || detailedEvent.location}
                 </span>
-                {detailedEvent.distance !== undefined && (
-                  <span className="flex items-center text-orange-600">
-                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 20l-5.447-2.724A2 2 0 013 15.488V5.512a2 2 0 011.053-1.789L9 1l6 3 5.447-2.724A2 2 0 0121 3.064v9.976a2 2 0 01-1.053 1.789L15 17.5l-6 2.5z" strokeWidth={2.5}/></svg>
-                    {detailedEvent.distance.toFixed(1)} km away
-                  </span>
-                )}
               </div>
             </header>
 
@@ -501,7 +497,6 @@ const App: React.FC = () => {
                   target="_blank" 
                   rel="noopener noreferrer" 
                   className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200"
-                  aria-label="Visit official event website"
                 >
                   Visit Official Site
                 </a>
@@ -511,7 +506,6 @@ const App: React.FC = () => {
                   target="_blank" 
                   rel="noopener noreferrer" 
                   className="flex-1 px-8 py-5 bg-gray-900 text-white font-black rounded-2xl text-center hover:bg-black transition-all shadow-xl shadow-gray-200"
-                  aria-label="Search for more information about this event"
                 >
                   Search for More Info
                 </a>
@@ -519,7 +513,6 @@ const App: React.FC = () => {
               <button 
                 onClick={() => addToCalendar(detailedEvent)} 
                 className="px-8 py-5 bg-gray-50 text-gray-900 border-2 border-gray-200 font-black rounded-2xl flex items-center justify-center hover:border-orange-500 hover:text-orange-600 transition-all group"
-                aria-label="Add event to Google Calendar"
               >
                 <svg className="w-5 h-5 mr-3 text-gray-400 group-hover:text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                 Add to Calendar
