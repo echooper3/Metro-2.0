@@ -6,15 +6,13 @@ import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
 import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
 import { City, AppView, EventActivity, Category, GroundingSource } from './types';
-import { fetchEvents, FetchOptions, getQuotaStatus } from './services/geminiService';
+import { fetchEvents, FetchOptions, getQuotaStatus, resetQuotaStandby } from './services/geminiService';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LANDING);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
   const [events, setEvents] = useState<EventActivity[]>([]);
   const [sources, setSources] = useState<GroundingSource[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState<string>('All Locations');
@@ -27,7 +25,7 @@ const App: React.FC = () => {
   const [isSortingByDistance, setIsSortingByDistance] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [quotaExhausted, setQuotaExhausted] = useState(false);
+  const [sourceStatus, setSourceStatus] = useState<'live' | 'grounded' | 'ai' | 'seed'>('seed');
   
   const [isPending, startTransition] = useTransition();
   const fetchIdRef = useRef(0);
@@ -45,9 +43,6 @@ const App: React.FC = () => {
     localStorage.setItem('metro_favorites', JSON.stringify(savedEventIds));
   }, [savedEventIds]);
 
-  /**
-   * Utility to check if an event date (MM/DD/YYYY) falls within input range (YYYY-MM-DD)
-   */
   const isDateInRange = useCallback((eventDateStr?: string, startStr?: string, endStr?: string) => {
     if (!eventDateStr) return true;
     const [m, d, y] = eventDateStr.split('/').map(Number);
@@ -74,9 +69,6 @@ const App: React.FC = () => {
     return R * c;
   };
 
-  /**
-   * Main data loader optimized for performance and rate limits
-   */
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}, append = false) => {
     const requestId = ++fetchIdRef.current;
     
@@ -86,9 +78,7 @@ const App: React.FC = () => {
       cityId = cityObj ? cityObj.id : cityName.toLowerCase().replace(/\s+/g, '');
     }
 
-    // 1. INSTANT SEED UPDATE (Zero Latency)
     let seeds = (cityId === 'global') ? [...GLOBAL_SEED_EVENTS] : [...(SEED_EVENTS[cityId] || [])];
-    
     if (options.category && options.category !== 'All') {
       seeds = seeds.filter(s => s.category === options.category);
     }
@@ -98,19 +88,15 @@ const App: React.FC = () => {
       startTransition(() => {
         setEvents(seeds);
         setIsRefreshing(true);
-        setQuotaExhausted(getQuotaStatus().isExhausted);
+        setSourceStatus('seed');
       });
       setCurrentPage(1);
       setHasMore(true);
-    } else {
-      setIsLoadingMore(true);
     }
 
-    // 2. BACKGROUND LIVE DATA FETCH
     const targetPage = append ? currentPage + 1 : 1;
     const data = await fetchEvents(cityName, { ...options, page: targetPage });
     
-    // Check if this request is still the most recent one
     if (requestId !== fetchIdRef.current) return;
 
     if (data) {
@@ -126,26 +112,33 @@ const App: React.FC = () => {
         if (append) {
           setEvents(prev => [...prev, ...liveEvents]);
           setCurrentPage(targetPage);
-          setIsLoadingMore(false);
         } else {
           setEvents(liveEvents);
           setSources(data.sources);
           setIsRefreshing(false);
-          setQuotaExhausted(false);
+          setSourceStatus(data.status);
         }
       });
     } else {
-      // If fetch fails, we just keep the seeds and update quota status
       startTransition(() => {
         setIsRefreshing(false);
-        setIsLoadingMore(false);
-        setQuotaExhausted(getQuotaStatus().isExhausted);
+        setSourceStatus('seed');
       });
     }
   }, [currentPage, isDateInRange]);
 
+  const handleRetrySearch = () => {
+    resetQuotaStandby();
+    loadCityEvents(selectedCity?.name || 'All', { 
+      category: activeCategory,
+      startDate: dateRange.start || undefined, 
+      endDate: dateRange.end || undefined,
+      keyword: searchQuery || undefined,
+      forceRefresh: true
+    });
+  };
+
   const prefetchCategory = useCallback((cat: Category) => {
-    if (getQuotaStatus().isExhausted) return;
     const cityName = selectedCity?.name || 'All';
     fetchEvents(cityName, { 
       category: cat,
@@ -239,14 +232,6 @@ const App: React.FC = () => {
     });
   };
 
-  const clearDates = () => {
-    setDateRange({ start: '', end: '' });
-    loadCityEvents(selectedCity?.name || 'All', { 
-      category: activeCategory,
-      keyword: searchQuery || undefined
-    });
-  };
-
   const handleHome = () => {
     startTransition(() => {
       setView(AppView.LANDING);
@@ -257,22 +242,6 @@ const App: React.FC = () => {
       setIsSortingByDistance(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
-  };
-
-  const handleToggleDistanceSort = () => {
-    if (!userLocation) {
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            setIsSortingByDistance(true);
-          },
-          () => alert("Please allow location access to sort by proximity.")
-        );
-      }
-    } else {
-      setIsSortingByDistance(!isSortingByDistance);
-    }
   };
 
   const addToCalendar = (event: EventActivity) => {
@@ -330,23 +299,37 @@ const App: React.FC = () => {
               {selectedCity && <p className="text-xl text-gray-400 max-w-3xl font-medium leading-relaxed">{selectedCity.description}</p>}
               
               <div className="flex flex-wrap items-center gap-4 mt-8">
-                {(isRefreshing || isPending) && (
+                {isRefreshing ? (
                   <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-6 py-3 rounded-2xl">
                     <div className="flex space-x-1">
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce"></div>
                     </div>
-                    <span className="text-orange-400 font-bold text-xs uppercase tracking-widest">
-                      {isPending ? 'Optimizing View...' : 'Live Sourcing...'}
-                    </span>
+                    <span className="text-orange-400 font-bold text-xs uppercase tracking-widest">Live Sourcing...</span>
                   </div>
-                )}
-                
-                {quotaExhausted && (
-                  <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/20 px-6 py-3 rounded-2xl animate-in slide-in-from-left duration-500">
-                    <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    <span className="text-amber-500 font-bold text-[10px] uppercase tracking-widest">Live Search Standby — Viewing Hub Seeds</span>
+                ) : (
+                  <div className={`flex items-center gap-3 border px-6 py-3 rounded-2xl transition-colors ${
+                    sourceStatus === 'grounded' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' :
+                    sourceStatus === 'ai' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' :
+                    'bg-gray-500/10 border-gray-500/20 text-gray-400'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full ${
+                      sourceStatus === 'grounded' ? 'bg-emerald-500 animate-pulse' :
+                      sourceStatus === 'ai' ? 'bg-blue-500' : 'bg-gray-500'
+                    }`} />
+                    <span className="font-bold text-[10px] uppercase tracking-widest">
+                      {sourceStatus === 'grounded' ? 'Live Grounded Search' : 
+                       sourceStatus === 'ai' ? 'AI Knowledge Mode' : 'Hub Local Seeds'}
+                    </span>
+                    {sourceStatus === 'ai' && (
+                      <button 
+                        onClick={handleRetrySearch}
+                        className="ml-2 text-[8px] border border-blue-500/50 px-2 py-0.5 rounded hover:bg-blue-500/20 transition-all"
+                      >
+                        Try Live
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -378,17 +361,9 @@ const App: React.FC = () => {
                     <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">To</span>
                     <input type="date" value={dateRange.end} onChange={(e) => handleDateChange('end', e.target.value)} className="bg-transparent text-xs font-bold text-gray-700 outline-none" />
                   </div>
-                  {(dateRange.start || dateRange.end) && (
-                    <button onClick={clearDates} className="px-4 py-2.5 bg-orange-50 text-orange-600 border border-orange-100 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Clear</button>
-                  )}
-                  <button onClick={handleToggleDistanceSort} className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm ${isSortingByDistance ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-orange-50'}`}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>
-                    {isSortingByDistance ? 'Nearby First' : 'Sort Distance'}
-                  </button>
                 </div>
 
                 <div className="w-full md:w-auto flex items-center gap-3">
-                  <span className="hidden lg:block text-[10px] font-black uppercase tracking-widest text-gray-400">Venue</span>
                   <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="bg-gray-50 border border-gray-100 text-xs font-black uppercase tracking-widest text-gray-600 px-6 py-3 rounded-2xl outline-none focus:border-orange-500 transition-all w-full md:w-64">
                     {venuesList.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
@@ -408,34 +383,20 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
-            
-            {hasMore && sortedAndFilteredEvents.length >= 8 && !quotaExhausted && (
-              <div className="mt-16 flex justify-center">
-                <button 
-                  onClick={() => loadCityEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined, startDate: dateRange.start || undefined, endDate: dateRange.end || undefined }, true)}
-                  disabled={isLoadingMore}
-                  className="px-12 py-5 bg-white border-2 border-gray-100 text-gray-900 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:border-orange-500 hover:text-orange-600 transition-all flex items-center gap-3 disabled:opacity-50"
-                >
-                  {isLoadingMore ? <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin"></div> : 'Load More Discovery'}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Details Modal */}
       {detailedEvent && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setDetailedEvent(null)} />
           <div ref={modalRef} className="relative bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col">
-            <button onClick={() => setDetailedEvent(null)} className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all" aria-label="Close">
+            <button onClick={() => setDetailedEvent(null)} className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
             <header className="mb-8 pr-12">
               <div className="flex gap-2 mb-4">
                 <span className="px-4 py-1.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">{detailedEvent.category}</span>
-                {detailedEvent.ageRestriction && <span className="px-4 py-1.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block border border-gray-200">{detailedEvent.ageRestriction}</span>}
               </div>
               <h2 className="text-3xl md:text-5xl font-black text-gray-900 leading-[1.1] mb-6 tracking-tighter">{detailedEvent.title}</h2>
               <div className="flex flex-wrap gap-x-8 gap-y-4 text-sm font-bold text-gray-500">
@@ -444,18 +405,12 @@ const App: React.FC = () => {
               </div>
             </header>
             <div className="flex-grow prose prose-orange max-w-none mb-10 overflow-y-auto">
-              <h4 className="text-xs font-black uppercase tracking-widest text-orange-600 mb-2">Event Intel</h4>
               <p className="text-gray-600 text-lg leading-relaxed font-medium">{detailedEvent.description}</p>
             </div>
             <footer className="flex flex-col sm:flex-row gap-4 pt-10 border-t border-gray-100 mt-auto">
-              {detailedEvent.sourceUrl ? (
-                <a href={detailedEvent.sourceUrl} target="_blank" rel="noopener noreferrer" className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200">Official Site</a>
-              ) : (
-                <a href={`https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} target="_blank" rel="noopener noreferrer" className="flex-1 px-8 py-5 bg-gray-900 text-white font-black rounded-2xl text-center hover:bg-black transition-all shadow-xl shadow-gray-200">Search Info</a>
-              )}
+              <a href={detailedEvent.sourceUrl || `https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} target="_blank" rel="noopener noreferrer" className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200">View Official Site</a>
               <button onClick={() => addToCalendar(detailedEvent)} className="px-8 py-5 bg-gray-50 text-gray-900 border-2 border-gray-200 font-black rounded-2xl flex items-center justify-center hover:border-orange-500 hover:text-orange-600 transition-all">
-                <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                Calendar
+                Add to Calendar
               </button>
             </footer>
           </div>
