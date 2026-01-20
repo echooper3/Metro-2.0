@@ -38,30 +38,30 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, isSaved, onToggl
   };
 
   return (
-    <div className="group bg-white p-6 rounded-xl border border-gray-100 hover:border-orange-200 hover:shadow-xl transition-all duration-300 flex flex-col h-full relative">
+    <div className="group bg-white p-6 rounded-2xl border border-gray-100 hover:border-orange-200 hover:shadow-xl transition-all duration-300 flex flex-col h-full relative">
       {/* Save Button */}
       <button 
-        onClick={() => onToggleSave?.(event)}
-        className={`absolute top-4 right-4 p-2 rounded-full transition-all ${
-          isSaved ? 'text-orange-600 bg-orange-50' : 'text-gray-300 hover:text-orange-400 hover:bg-gray-50'
+        onClick={(e) => { e.stopPropagation(); onToggleSave?.(event); }}
+        className={`absolute top-4 right-4 p-2.5 rounded-full transition-all z-10 ${
+          isSaved ? 'text-orange-600 bg-orange-50' : 'text-gray-300 hover:text-orange-500 hover:bg-gray-50'
         }`}
-        title={isSaved ? "Unsave event" : "Save event"}
+        title={isSaved ? "Remove from favorites" : "Save to favorites"}
       >
-        <svg className="w-6 h-6" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        <svg className="w-5 h-5" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
         </svg>
       </button>
 
       <div className="flex justify-between items-start mb-4 pr-10">
         <div className="flex flex-wrap gap-2">
           <span 
-            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${getCategoryColor(event.category)}`}
-            title={event.category}
+            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${getCategoryColor(event.category)}`}
+            title={`Category: ${event.category}`}
           >
             {event.category}
           </span>
           {showCity && event.cityName && (
-            <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gray-900 text-white">
+            <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-gray-900 text-white">
               {event.cityName}
             </span>
           )}
@@ -71,40 +71,40 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, isSaved, onToggl
       <div className="flex-grow">
         <div className="flex justify-between items-center mb-2">
           {event.date && (
-            <span className="text-xs font-semibold text-gray-400 whitespace-nowrap">{event.date}</span>
+            <span className="text-xs font-bold text-gray-400">{event.date}</span>
           )}
         </div>
-        <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight group-hover:text-orange-600 transition-colors">
+        <h3 className="text-xl font-black text-gray-900 mb-3 leading-tight group-hover:text-orange-600 transition-colors">
           {event.title}
         </h3>
-        <p className="text-gray-600 text-sm mb-6 line-clamp-3">
+        <p className="text-gray-600 text-sm mb-6 line-clamp-3 leading-relaxed">
           {event.description}
         </p>
       </div>
 
       <div className="mt-auto">
-        <div className="flex items-center text-xs font-medium text-gray-500 mb-4 pt-4 border-t border-gray-50">
-          <svg className="w-4 h-4 mr-1.5 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        <div className="flex items-center text-xs font-bold text-gray-500 mb-5 pt-4 border-t border-gray-50">
+          <svg className="w-4 h-4 mr-2 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
           <span className="truncate">{event.location}</span>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-1.5">
             <button 
               onClick={() => shareEvent('twitter')}
-              className="p-1.5 text-gray-400 hover:text-blue-400 transition-colors"
-              title="Share on Twitter"
+              className="p-1.5 text-gray-400 hover:text-[#1DA1F2] transition-colors"
+              title="Share on X"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M23.953 4.57a10 10 0 01-2.825.775 4.958 4.958 0 002.163-2.723c-.951.555-2.005.959-3.127 1.184a4.92 4.92 0 00-8.384 4.482C7.69 8.095 4.067 6.13 1.64 3.162a4.822 4.822 0 00-.666 2.475c0 1.71.87 3.213 2.188 4.096a4.904 4.904 0 01-2.228-.616v.06a4.923 4.923 0 003.946 4.84 4.996 4.996 0 01-2.212.085 4.936 4.936 0 004.604 3.417 9.867 9.867 0 01-6.102 2.105c-.39 0-.779-.023-1.17-.067a13.995 13.995 0 007.557 2.209c9.053 0 13.998-7.496 13.998-13.985 0-.21 0-.42-.015-.63A9.935 9.935 0 0024 4.59z"/>
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
               </svg>
             </button>
             <button 
               onClick={() => shareEvent('facebook')}
-              className="p-1.5 text-gray-400 hover:text-blue-700 transition-colors"
+              className="p-1.5 text-gray-400 hover:text-[#1877F2] transition-colors"
               title="Share on Facebook"
             >
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
@@ -117,7 +117,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, isSaved, onToggl
               title="Share via Email"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
             </button>
           </div>
@@ -126,11 +126,11 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, isSaved, onToggl
             href={event.sourceUrl || `https://www.google.com/search?q=${encodeURIComponent(event.title + ' ' + (event.cityName || ''))}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-bold text-orange-600 hover:text-orange-700 underline flex items-center"
+            className="px-4 py-2 bg-orange-50 text-orange-600 rounded-xl text-xs font-black hover:bg-orange-600 hover:text-white transition-all flex items-center shrink-0"
           >
-            View Details
-            <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            Details
+            <svg className="w-3.5 h-3.5 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M14 5l7 7m0 0l-7 7m7-7H3" />
             </svg>
           </a>
         </div>

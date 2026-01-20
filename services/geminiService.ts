@@ -2,7 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EventActivity, GroundingSource } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Safe access to the API key to prevent ReferenceErrors in browser environments
+const getApiKey = () => {
+  try {
+    return process.env.API_KEY || '';
+  } catch (e) {
+    return '';
+  }
+};
 
 export interface FetchOptions {
   category?: string;
@@ -14,6 +21,13 @@ export interface FetchOptions {
 
 export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[] }> => {
   try {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      console.warn("Gemini API Key is missing. Please set API_KEY in your environment.");
+      return { events: [], sources: [] };
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const { category, startDate, endDate, keyword, page = 1 } = options;
     
     let prompt = `List 10 diverse upcoming events and activities.`;
