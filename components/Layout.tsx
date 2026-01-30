@@ -6,10 +6,11 @@ interface LayoutProps {
   onHome: () => void;
   onAuth: () => void;
   onSearch: (query: string) => void;
+  onPostEvent: () => void;
   isLoggedIn?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, isLoggedIn }) => {
+const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onPostEvent, isLoggedIn }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -60,6 +61,15 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, isL
           </form>
           
           <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+            <button 
+              onClick={onPostEvent}
+              className="hidden lg:flex items-center px-4 py-2 text-xs font-black uppercase tracking-widest text-orange-600 hover:bg-orange-50 rounded-full transition-all"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
+              </svg>
+              Post Event
+            </button>
             <button 
               onClick={onAuth}
               className="hidden sm:block px-4 py-2 text-sm font-bold text-gray-600 hover:text-orange-600 transition-colors"

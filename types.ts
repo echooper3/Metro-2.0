@@ -14,15 +14,21 @@ export interface EventActivity {
   description: string;
   date?: string;
   time?: string;
+  endTime?: string;
   location: string;
   venue?: string;
   sourceUrl?: string;
   cityName?: string;
   isTrending?: boolean;
+  imageUrl?: string;
   lat?: number;
   lng?: number;
-  distance?: number; // Calculated distance from user in km/miles
-  ageRestriction?: string; // e.g., "All Ages", "21+", "18+"
+  distance?: number; 
+  ageRestriction?: string; 
+  userCreated?: boolean;
+  price?: string;
+  isFree?: boolean;
+  priceLevel?: string;
 }
 
 export interface GroundingSource {

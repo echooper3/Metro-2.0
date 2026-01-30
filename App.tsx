@@ -4,9 +4,10 @@ import Layout from './components/Layout';
 import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
+import CreateEventModal from './components/CreateEventModal';
 import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
 import { City, AppView, EventActivity, Category, GroundingSource } from './types';
-import { fetchEvents, FetchOptions, getQuotaStatus, resetQuotaStandby } from './services/geminiService';
+import { fetchEvents, FetchOptions, resetQuotaStandby, getCacheKey, getCachedData } from './services/geminiService';
 
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LANDING);
@@ -15,12 +16,13 @@ const App: React.FC = () => {
   const [sources, setSources] = useState<GroundingSource[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState<string>('All Locations');
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [detailedEvent, setDetailedEvent] = useState<EventActivity | null>(null);
+  const [isModalDescExpanded, setIsModalDescExpanded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [savedEventIds, setSavedEventIds] = useState<string[]>([]);
+  const [userCreatedEvents, setUserCreatedEvents] = useState<EventActivity[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isSortingByDistance, setIsSortingByDistance] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -33,9 +35,21 @@ const App: React.FC = () => {
 
   // Persistence
   useEffect(() => {
-    const stored = localStorage.getItem('metro_favorites');
-    if (stored) {
-      try { setSavedEventIds(JSON.parse(stored)); } catch (e) {}
+    const storedFavs = localStorage.getItem('metro_favorites');
+    if (storedFavs) {
+      try { setSavedEventIds(JSON.parse(storedFavs)); } catch (e) {}
+    }
+    const storedUserEvents = sessionStorage.getItem('metro_user_events');
+    if (storedUserEvents) {
+      try { setUserCreatedEvents(JSON.parse(storedUserEvents)); } catch (e) {}
+    }
+
+    // Attempt to get user location for proximity features
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => console.log('Location access denied')
+      );
     }
   }, []);
 
@@ -43,19 +57,21 @@ const App: React.FC = () => {
     localStorage.setItem('metro_favorites', JSON.stringify(savedEventIds));
   }, [savedEventIds]);
 
-  const isDateInRange = useCallback((eventDateStr?: string, startStr?: string, endStr?: string) => {
+  useEffect(() => {
+    sessionStorage.setItem('metro_user_events', JSON.stringify(userCreatedEvents));
+  }, [userCreatedEvents]);
+
+  const isUpcoming = useCallback((eventDateStr?: string) => {
     if (!eventDateStr) return true;
-    const [m, d, y] = eventDateStr.split('/').map(Number);
-    const eventTime = new Date(y, m - 1, d).getTime();
-    if (startStr) {
-      const start = new Date(startStr + 'T00:00:00').getTime();
-      if (eventTime < start) return false;
+    try {
+      const [m, d, y] = eventDateStr.split('/').map(Number);
+      const eventTime = new Date(y, m - 1, d).getTime();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return eventTime >= today.getTime();
+    } catch (e) {
+      return true;
     }
-    if (endStr) {
-      const end = new Date(endStr + 'T23:59:59').getTime();
-      if (eventTime > end) return false;
-    }
-    return true;
   }, []);
 
   const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -69,70 +85,90 @@ const App: React.FC = () => {
     return R * c;
   };
 
+  /**
+   * Enhanced fetch logic with Stale-While-Revalidate
+   */
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}, append = false) => {
     const requestId = ++fetchIdRef.current;
     
-    let cityId = 'global';
-    if (cityName !== 'All') {
-      const cityObj = CITIES.find(c => c.name === cityName);
-      cityId = cityObj ? cityObj.id : cityName.toLowerCase().replace(/\s+/g, '');
-    }
-
-    let seeds = (cityId === 'global') ? [...GLOBAL_SEED_EVENTS] : [...(SEED_EVENTS[cityId] || [])];
-    if (options.category && options.category !== 'All') {
-      seeds = seeds.filter(s => s.category === options.category);
-    }
-    seeds = seeds.filter(s => isDateInRange(s.date, options.startDate, options.endDate));
-
     if (!append) {
-      startTransition(() => {
-        setEvents(seeds);
-        setIsRefreshing(true);
-        setSourceStatus('seed');
-      });
+      const cacheKey = getCacheKey(cityName, options);
+      const cached = getCachedData(cacheKey);
+      
+      if (cached) {
+        startTransition(() => {
+          setEvents(cached.events);
+          setSources(cached.sources || []);
+          setSourceStatus(cached.sources?.length > 0 ? 'grounded' : 'ai');
+          setIsRefreshing(true);
+        });
+      } else {
+        let cityId = 'global';
+        if (cityName !== 'All') {
+          const cityObj = CITIES.find(c => c.name === cityName);
+          cityId = cityObj ? cityObj.id : cityName.toLowerCase().replace(/\s+/g, '');
+        }
+        let seeds = (cityId === 'global') ? [...GLOBAL_SEED_EVENTS] : [...(SEED_EVENTS[cityId] || [])];
+        if (options.category && options.category !== 'All') {
+          seeds = seeds.filter(s => s.category === options.category);
+        }
+        startTransition(() => {
+          setEvents(seeds);
+          setIsRefreshing(true);
+          setSourceStatus('seed');
+        });
+      }
       setCurrentPage(1);
       setHasMore(true);
     }
 
-    const targetPage = append ? currentPage + 1 : 1;
-    const data = await fetchEvents(cityName, { ...options, page: targetPage });
-    
-    if (requestId !== fetchIdRef.current) return;
+    try {
+      const targetPage = append ? currentPage + 1 : 1;
+      const data = await fetchEvents(cityName, { ...options, page: targetPage });
+      
+      if (requestId !== fetchIdRef.current) return;
 
-    if (data) {
-      let liveEvents = data.events;
-      if (options.category && options.category !== 'All') {
-        liveEvents = liveEvents.filter(e => e.category === options.category);
+      if (data) {
+        let liveEvents = data.events.filter(e => isUpcoming(e.date));
+        
+        const matchedUserEvents = userCreatedEvents.filter(u => {
+          const cityMatch = cityName === 'All' || u.cityName === cityName;
+          const catMatch = !options.category || options.category === 'All' || u.category === options.category;
+          return cityMatch && catMatch;
+        });
+
+        startTransition(() => {
+          if (append) {
+            setEvents(prev => [...prev, ...liveEvents]);
+            setCurrentPage(targetPage);
+          } else {
+            setEvents([...matchedUserEvents, ...liveEvents]);
+            setSources(data.sources);
+            setIsRefreshing(false);
+            setSourceStatus(data.status);
+          }
+        });
+        setHasMore(liveEvents.length >= 8);
+      } else {
+        startTransition(() => setIsRefreshing(false));
       }
-      liveEvents = liveEvents.filter(e => isDateInRange(e.date, options.startDate, options.endDate));
-
-      setHasMore(liveEvents.length >= 8);
-
-      startTransition(() => {
-        if (append) {
-          setEvents(prev => [...prev, ...liveEvents]);
-          setCurrentPage(targetPage);
-        } else {
-          setEvents(liveEvents);
-          setSources(data.sources);
-          setIsRefreshing(false);
-          setSourceStatus(data.status);
-        }
-      });
-    } else {
-      startTransition(() => {
-        setIsRefreshing(false);
-        setSourceStatus('seed');
-      });
+    } catch (err) {
+      console.error('Failed to load events', err);
+      startTransition(() => setIsRefreshing(false));
     }
-  }, [currentPage, isDateInRange]);
+  }, [currentPage, isUpcoming, userCreatedEvents]);
+
+  const handleSaveNewEvent = (newEvent: EventActivity) => {
+    setUserCreatedEvents(prev => [newEvent, ...prev]);
+    if (view === AppView.CITY_DETAIL && selectedCity?.name === newEvent.cityName) {
+       setEvents(prev => [newEvent, ...prev]);
+    }
+  };
 
   const handleRetrySearch = () => {
     resetQuotaStandby();
     loadCityEvents(selectedCity?.name || 'All', { 
       category: activeCategory,
-      startDate: dateRange.start || undefined, 
-      endDate: dateRange.end || undefined,
       keyword: searchQuery || undefined,
       forceRefresh: true
     });
@@ -142,11 +178,16 @@ const App: React.FC = () => {
     const cityName = selectedCity?.name || 'All';
     fetchEvents(cityName, { 
       category: cat,
-      startDate: dateRange.start || undefined, 
-      endDate: dateRange.end || undefined,
       keyword: searchQuery || undefined
     }).catch(() => {});
-  }, [selectedCity, dateRange, searchQuery]);
+  }, [selectedCity, searchQuery]);
+
+  useEffect(() => {
+    if (selectedCity) {
+      const warmCategories: Category[] = ['Sports', 'Entertainment', 'Arts & Culture'];
+      warmCategories.forEach(cat => prefetchCategory(cat));
+    }
+  }, [selectedCity, prefetchCategory]);
 
   const toggleSaveEvent = useCallback((event: EventActivity) => {
     setSavedEventIds(prev => {
@@ -163,9 +204,6 @@ const App: React.FC = () => {
         distance: (e.lat && e.lng) ? getDistance(userLocation.lat, userLocation.lng, e.lat, e.lng) : undefined
       }));
     }
-    if (selectedLocation !== 'All Locations') {
-      result = result.filter(e => (e.venue === selectedLocation || e.location === selectedLocation));
-    }
     if (isSortingByDistance && userLocation) {
       result.sort((a, b) => {
         if (a.distance === undefined) return 1;
@@ -174,16 +212,7 @@ const App: React.FC = () => {
       });
     }
     return result;
-  }, [events, selectedLocation, isSortingByDistance, userLocation]);
-
-  const venuesList = useMemo(() => {
-    const venues = new Set<string>();
-    events.forEach(e => {
-      const v = e.venue || e.location;
-      if (v && v.length < 35) venues.add(v);
-    });
-    return ['All Locations', ...Array.from(venues)].sort();
-  }, [events]);
+  }, [events, isSortingByDistance, userLocation]);
 
   const handleCitySelect = (city: City) => {
     startTransition(() => {
@@ -191,7 +220,6 @@ const App: React.FC = () => {
       setView(AppView.CITY_DETAIL);
       setActiveCategory('All');
       setSearchQuery('');
-      setDateRange({ start: '', end: '' });
       window.scrollTo({ top: 0, behavior: 'instant' });
       loadCityEvents(city.name, { category: 'All' });
     });
@@ -203,7 +231,6 @@ const App: React.FC = () => {
       setView(AppView.SEARCH_RESULTS);
       setSelectedCity(null);
       setActiveCategory('All');
-      setDateRange({ start: '', end: '' });
       window.scrollTo({ top: 0, behavior: 'smooth' });
       loadCityEvents('All', { keyword: query, category: 'All' });
     });
@@ -214,21 +241,8 @@ const App: React.FC = () => {
       setActiveCategory(cat);
       loadCityEvents(selectedCity?.name || 'All', { 
         category: cat,
-        startDate: dateRange.start || undefined, 
-        endDate: dateRange.end || undefined,
         keyword: searchQuery || undefined
       });
-    });
-  };
-
-  const handleDateChange = (type: 'start' | 'end', val: string) => {
-    const newRange = { ...dateRange, [type]: val };
-    setDateRange(newRange);
-    loadCityEvents(selectedCity?.name || 'All', { 
-      category: activeCategory,
-      startDate: newRange.start || undefined, 
-      endDate: newRange.end || undefined,
-      keyword: searchQuery || undefined
     });
   };
 
@@ -238,7 +252,6 @@ const App: React.FC = () => {
       setSelectedCity(null);
       setEvents([]);
       setSources([]);
-      setDateRange({ start: '', end: '' });
       setIsSortingByDistance(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
@@ -258,12 +271,43 @@ const App: React.FC = () => {
     window.open(googleUrl, '_blank');
   };
 
+  const getPriceDisplay = (event: EventActivity) => {
+    if (event.isFree) return { text: 'Free Entry', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    if (event.price) return { text: event.price, className: 'bg-orange-50 text-orange-700 border-orange-100' };
+    if (event.priceLevel) return { text: event.priceLevel, className: 'bg-gray-100 text-gray-700 border-gray-200' };
+    return null;
+  };
+
+  const openDetails = (event: EventActivity) => {
+    setDetailedEvent(event);
+    setIsModalDescExpanded(false);
+  };
+
+  const closeDetails = () => {
+    setDetailedEvent(null);
+  };
+
+  const modalDescription = detailedEvent ? (
+    detailedEvent.description.length > 250 && !isModalDescExpanded
+      ? detailedEvent.description.slice(0, 250) + '...'
+      : detailedEvent.description
+  ) : '';
+
   return (
-    <Layout onHome={handleHome} onAuth={() => setShowAuthModal(true)} onSearch={handleGlobalSearch}>
+    <Layout 
+      onHome={handleHome} 
+      onAuth={() => setShowAuthModal(true)} 
+      onSearch={handleGlobalSearch}
+      onPostEvent={() => setShowCreateModal(true)}
+    >
       {view === AppView.LANDING && (
         <div className="animate-in fade-in duration-700">
           <section className="relative h-[700px] flex items-center justify-center overflow-hidden bg-gray-950">
-            <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1920" className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" alt="" />
+            <img 
+              src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1200" 
+              className="absolute inset-0 w-full h-full object-cover opacity-20 grayscale" 
+              alt="City Skyline" 
+            />
             <div className="relative z-10 text-center max-w-4xl px-4">
               <span className="text-orange-500 font-black tracking-[0.3em] uppercase mb-6 block text-sm">Metropolitan Sourcing & Discovery</span>
               <h2 className="text-6xl md:text-8xl font-black text-white mb-8 leading-[0.9] tracking-tighter">
@@ -284,7 +328,7 @@ const App: React.FC = () => {
       )}
 
       {(view === AppView.CITY_DETAIL || view === AppView.SEARCH_RESULTS) && (
-        <div className={`pb-24 transition-opacity duration-300 ${isPending ? 'opacity-80' : 'opacity-100'}`}>
+        <div className="pb-24">
           <div className="bg-gray-950 pt-32 pb-24 text-white relative overflow-hidden">
             <div className="absolute top-0 right-0 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
             
@@ -300,13 +344,13 @@ const App: React.FC = () => {
               
               <div className="flex flex-wrap items-center gap-4 mt-8">
                 {isRefreshing ? (
-                  <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-6 py-3 rounded-2xl">
+                  <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-6 py-3 rounded-2xl animate-pulse">
                     <div className="flex space-x-1">
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                       <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce"></div>
                     </div>
-                    <span className="text-orange-400 font-bold text-xs uppercase tracking-widest">Live Sourcing...</span>
+                    <span className="text-orange-400 font-bold text-xs uppercase tracking-widest">Updating...</span>
                   </div>
                 ) : (
                   <div className={`flex items-center gap-3 border px-6 py-3 rounded-2xl transition-colors ${
@@ -319,17 +363,9 @@ const App: React.FC = () => {
                       sourceStatus === 'ai' ? 'bg-blue-500' : 'bg-gray-500'
                     }`} />
                     <span className="font-bold text-[10px] uppercase tracking-widest">
-                      {sourceStatus === 'grounded' ? 'Live Grounded Search' : 
-                       sourceStatus === 'ai' ? 'AI Knowledge Mode' : 'Hub Local Seeds'}
+                      {sourceStatus === 'grounded' ? 'Live Grounded' : 
+                       sourceStatus === 'ai' ? 'AI Knowledge' : 'Cached Hub'}
                     </span>
-                    {sourceStatus === 'ai' && (
-                      <button 
-                        onClick={handleRetrySearch}
-                        className="ml-2 text-[8px] border border-blue-500/50 px-2 py-0.5 rounded hover:bg-blue-500/20 transition-all"
-                      >
-                        Try Live
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -350,36 +386,19 @@ const App: React.FC = () => {
                   </button>
                 ))}
               </div>
-              
-              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-4 py-2.5 rounded-2xl">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">From</span>
-                    <input type="date" value={dateRange.start} onChange={(e) => handleDateChange('start', e.target.value)} className="bg-transparent text-xs font-bold text-gray-700 outline-none" />
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 px-4 py-2.5 rounded-2xl">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">To</span>
-                    <input type="date" value={dateRange.end} onChange={(e) => handleDateChange('end', e.target.value)} className="bg-transparent text-xs font-bold text-gray-700 outline-none" />
-                  </div>
-                </div>
-
-                <div className="w-full md:w-auto flex items-center gap-3">
-                  <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="bg-gray-50 border border-gray-100 text-xs font-black uppercase tracking-widest text-gray-600 px-6 py-3 rounded-2xl outline-none focus:border-orange-500 transition-all w-full md:w-64">
-                    {venuesList.map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
-                </div>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 min-h-[400px]">
-              {sortedAndFilteredEvents.length > 0 ? (
+              {(isRefreshing && sortedAndFilteredEvents.length === 0) ? (
+                Array.from({ length: 6 }).map((_, i) => <EventSkeleton key={i} />)
+              ) : sortedAndFilteredEvents.length > 0 ? (
                 sortedAndFilteredEvents.map(event => (
-                  <EventItem key={event.id} event={event} showCity={view === AppView.SEARCH_RESULTS} isSaved={savedEventIds.includes(event.id)} onToggleSave={toggleSaveEvent} onOpenDetails={setDetailedEvent} />
+                  <EventItem key={event.id} event={event} showCity={view === AppView.SEARCH_RESULTS} isSaved={savedEventIds.includes(event.id)} onToggleSave={toggleSaveEvent} onOpenDetails={openDetails} />
                 ))
               ) : (
                 <div className="col-span-full py-24 text-center">
-                  <h3 className="text-xl font-black text-gray-900 mb-2">No matching events found</h3>
-                  <p className="text-gray-500">Try adjusting your filters or checking another city.</p>
+                  <h3 className="text-xl font-black text-gray-900 mb-2">No upcoming events found</h3>
+                  <p className="text-gray-500">Try checking another category or city.</p>
                 </div>
               )}
             </div>
@@ -387,16 +406,24 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {showCreateModal && <CreateEventModal onClose={() => setShowCreateModal(false)} onSave={handleSaveNewEvent} />}
+
       {detailedEvent && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setDetailedEvent(null)} />
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={closeDetails} />
           <div ref={modalRef} className="relative bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col">
-            <button onClick={() => setDetailedEvent(null)} className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all">
+            <button onClick={closeDetails} className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
             <header className="mb-8 pr-12">
-              <div className="flex gap-2 mb-4">
+              <div className="flex flex-wrap gap-2 mb-4">
                 <span className="px-4 py-1.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">{detailedEvent.category}</span>
+                {detailedEvent.userCreated && <span className="px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">Community Post</span>}
+                {getPriceDisplay(detailedEvent) && (
+                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block border ${getPriceDisplay(detailedEvent)!.className}`}>
+                    {getPriceDisplay(detailedEvent)!.text}
+                  </span>
+                )}
               </div>
               <h2 className="text-3xl md:text-5xl font-black text-gray-900 leading-[1.1] mb-6 tracking-tighter">{detailedEvent.title}</h2>
               <div className="flex flex-wrap gap-x-8 gap-y-4 text-sm font-bold text-gray-500">
@@ -404,8 +431,21 @@ const App: React.FC = () => {
                 <span className="flex items-center text-gray-900"><svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeWidth={2.5}/></svg>{detailedEvent.venue || detailedEvent.location}</span>
               </div>
             </header>
-            <div className="flex-grow prose prose-orange max-w-none mb-10 overflow-y-auto">
-              <p className="text-gray-600 text-lg leading-relaxed font-medium">{detailedEvent.description}</p>
+            <div className="flex-grow prose prose-orange max-w-none mb-4 overflow-y-auto">
+              <p className="text-gray-600 text-lg leading-relaxed font-medium">
+                {modalDescription}
+              </p>
+              {detailedEvent.description.length > 250 && (
+                <button 
+                  onClick={() => setIsModalDescExpanded(!isModalDescExpanded)}
+                  className="text-orange-600 text-xs font-black uppercase tracking-widest hover:underline transition-all mt-2 flex items-center gap-1 group"
+                >
+                  {isModalDescExpanded ? 'Read Less' : 'Read More'}
+                  <svg className={`w-3 h-3 transform transition-transform ${isModalDescExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              )}
             </div>
             <footer className="flex flex-col sm:flex-row gap-4 pt-10 border-t border-gray-100 mt-auto">
               <a href={detailedEvent.sourceUrl || `https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} target="_blank" rel="noopener noreferrer" className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200">View Official Site</a>

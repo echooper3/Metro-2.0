@@ -4,20 +4,12 @@ import { EventActivity, GroundingSource } from "../types";
 
 // Persistent Cache Configuration
 const CACHE_KEY_PREFIX = "itm_cache_";
-const CACHE_TTL = 1000 * 60 * 60 * 12; // 12 hours
+const CACHE_TTL = 1000 * 60 * 60 * 12; 
 
 // Track quota status globally
 let isGroundedQuotaExhausted = false;
 let isGlobalQuotaExhausted = false;
 let quotaResetTime = 0;
-
-const getApiKey = () => {
-  try {
-    return (typeof process !== 'undefined' && process.env.API_KEY) || '';
-  } catch (e) {
-    return '';
-  }
-};
 
 const extractJson = (text: string) => {
   const jsonMatch = text.match(/\[[\s\S]*\]/);
@@ -74,36 +66,44 @@ export const resetQuotaStandby = () => {
 };
 
 /**
+ * Sync helper to get cache key
+ */
+export const getCacheKey = (cityName: string | 'All', options: FetchOptions = {}) => {
+  return btoa(JSON.stringify({ cityName, ...options, forceRefresh: false }));
+};
+
+/**
+ * Sync helper to check cache
+ */
+export const getCachedData = (key: string) => {
+  return getPersistentCache(key);
+};
+
+/**
  * Internal helper to call Gemini with or without tools
  */
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean) {
   const { category, startDate, endDate, keyword, page = 1 } = options;
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error("API Key Missing");
-
-  const ai = new GoogleGenAI({ apiKey });
+  
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = "gemini-3-flash-preview";
   
   let categoryConstraint = (category && category !== 'All') 
-    ? `ONLY include events that strictly fall under the category: "${category}".` 
-    : `Include a diverse mix of all categories.`;
+    ? `Category: "${category}".` 
+    : `Diverse categories.`;
 
   const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  const prompt = `Act as a local event concierge for ${cityName}. 
-  Provide 10 unique, REAL-WORLD events happening in or near ${cityName} for Page ${page}.
-  
-  URGENT PRIORITY: 
-  - Today is ${currentDateStr}. 
-  - Prioritize events happening TODAY and THIS WEEKEND.
-  - DO NOT include events from the past.
-  
-  Constraints:
+  // Minimalist prompt to reduce output latency
+  const prompt = `Concierge for ${cityName}. Find 10 REAL events.
+  Today is ${currentDateStr}. Page ${page}.
+  Rules:
   - ${categoryConstraint}
-  - Range: ${startDate || 'Today'} to ${endDate || '30 days from now'}.
+  - Range: ${startDate || 'Upcoming'}
   - Keyword: ${keyword || 'None'}
+  - For imageUrl, provide a high-quality Unsplash URL: https://images.unsplash.com/photo-{ID}?auto=format&fit=crop&q=60&w=800 based on keywords like "concert", "stadium", "festival", "gallery".
   
-  Return a JSON array of objects with fields: title, category, description, date (MM/DD/YYYY), time, location, venue, cityName, sourceUrl, isTrending (boolean), lat, lng, ageRestriction.`;
+  JSON array: title, category, description, date (MM/DD/YYYY), time, location, venue, cityName, sourceUrl, imageUrl, isTrending, lat, lng, price, isFree, priceLevel.`;
 
   const config: any = {
     responseMimeType: "application/json",
@@ -121,17 +121,19 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
           venue: { type: Type.STRING },
           cityName: { type: Type.STRING },
           sourceUrl: { type: Type.STRING },
+          imageUrl: { type: Type.STRING },
           isTrending: { type: Type.BOOLEAN },
           lat: { type: Type.NUMBER },
           lng: { type: Type.NUMBER },
-          ageRestriction: { type: Type.STRING }
+          price: { type: Type.STRING },
+          isFree: { type: Type.BOOLEAN },
+          priceLevel: { type: Type.STRING }
         },
-        required: ["title", "category", "description", "location", "date", "lat", "lng"]
+        required: ["title", "category", "description", "location", "date"]
       }
     }
   };
 
-  // Only add search grounding if requested and not already known to be exhausted
   if (useGrounding && !isGroundedQuotaExhausted) {
     config.tools = [{ googleSearch: {} }];
   }
@@ -166,45 +168,64 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
  */
 export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[], status: 'grounded' | 'ai' } | null> => {
   const { forceRefresh = false } = options;
-  const cacheKey = btoa(JSON.stringify({ cityName, ...options, forceRefresh: false }));
+  const cacheKey = getCacheKey(cityName, options);
 
-  // 1. Check Global Rate Limit
   if (isGlobalQuotaExhausted && Date.now() < quotaResetTime && !forceRefresh) {
     return null;
   }
 
-  // 2. Persistent Cache
   if (!forceRefresh) {
     const cached = getPersistentCache(cacheKey);
     if (cached) return { ...cached, status: cached.sources?.length > 0 ? 'grounded' : 'ai' };
   }
 
-  // 3. ATTEMPT 1: Grounded Search (The Gold Standard)
   try {
     const result = await queryGemini(cityName, options, true);
     setPersistentCache(cacheKey, result);
     return { ...result, status: 'grounded' };
   } catch (error: any) {
     const errorMsg = error?.message || "";
-    
-    // If it's a 429, handle specifically
     if (errorMsg.includes('429') || error?.status === 429) {
-      console.warn("Gemini Search Quota Exhausted. Attempting AI Knowledge fallback...");
       isGroundedQuotaExhausted = true;
-      
-      // 4. ATTEMPT 2: Fallback to Pure AI (No Search Tool)
       try {
         const fallbackResult = await queryGemini(cityName, options, false);
         setPersistentCache(cacheKey, fallbackResult);
         return { ...fallbackResult, status: 'ai' };
       } catch (fallbackError: any) {
-        // Both failed -> Global Rate Limit hit
-        console.error("Gemini Global Quota Exhausted.");
         isGlobalQuotaExhausted = true;
         quotaResetTime = Date.now() + (30 * 60 * 1000); 
         return null;
       }
     }
     return null;
+  }
+};
+
+/**
+ * Search for places using Gemini and Google Maps tool
+ * Provides fuzzy autocomplete and geocoding
+ */
+export const searchPlaces = async (input: string): Promise<Array<{ name: string; address: string; lat: number; lng: number }>> => {
+  if (input.length < 3) return [];
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const model = "gemini-2.5-flash";
+    
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: `Find 5 locations for: "${input}". 
+      JSON array: "name", "address", "lat", "lng". 
+      Only JSON.`,
+      config: {
+        tools: [{ googleMaps: {} }]
+      }
+    });
+
+    const cleanJson = extractJson(response.text || "[]");
+    return JSON.parse(cleanJson);
+  } catch (error) {
+    console.error("Place search failed:", error);
+    return [];
   }
 };
