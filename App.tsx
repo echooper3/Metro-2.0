@@ -278,6 +278,62 @@ const App: React.FC = () => {
     return null;
   };
 
+  /**
+   * Intelligently parses and refines event location data
+   */
+  const getRefinedLocation = (event: EventActivity) => {
+    let venue = event.venue || "";
+    let address = event.location || "";
+
+    // If venue and address are identical, or address contains venue name
+    if (address && venue && address.toLowerCase().includes(venue.toLowerCase())) {
+        // Leave as is, but maybe strip the venue name from start of address if it repeats
+        if (address.toLowerCase().startsWith(venue.toLowerCase())) {
+            const trimmed = address.slice(venue.length).trim();
+            if (trimmed.startsWith(',') || trimmed.startsWith('-')) {
+                address = trimmed.slice(1).trim();
+            } else if (trimmed.length > 5) {
+                address = trimmed;
+            }
+        }
+    }
+
+    // If venue is missing, try to find it in the location string
+    if (!venue && address) {
+        const parts = address.split(',').map(p => p.trim());
+        if (parts.length > 1) {
+            // Heuristic: common venue indicators
+            const venueKeywords = ['Center', 'Park', 'Arena', 'Hall', 'Theater', 'Stadium', 'Club', 'Bar', 'Gallery', 'Museum', 'Square', 'Mall'];
+            const firstPartIsVenue = venueKeywords.some(k => parts[0].includes(k));
+            if (firstPartIsVenue) {
+                venue = parts[0];
+                address = parts.slice(1).join(', ');
+            }
+        }
+    }
+
+    // If venue is still missing, scan the description for city-area names
+    if (!venue && event.description) {
+        // Regex for capitalized phrases that look like venues (e.g. "BOK Center", "Klyde Warren Park")
+        const venueRegex = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Center|Park|Arena|Hall|Theater|Stadium|Club|Gallery|Museum|District|Field|Plaza))/g;
+        const matches = event.description.match(venueRegex);
+        if (matches && matches.length > 0) {
+            venue = matches[0];
+        }
+    }
+
+    // Ensure we don't just show the city name as the venue
+    const cityNames = CITIES.map(c => c.name.toLowerCase());
+    if (venue && cityNames.includes(venue.toLowerCase())) {
+        venue = "";
+    }
+
+    return { 
+        venue: venue || event.title + " Venue", 
+        address: (address && !cityNames.includes(address.toLowerCase())) ? address : (event.cityName || "") 
+    };
+  };
+
   const openDetails = (event: EventActivity) => {
     setDetailedEvent(event);
     setIsModalDescExpanded(false);
@@ -292,6 +348,8 @@ const App: React.FC = () => {
       ? detailedEvent.description.slice(0, 250) + '...'
       : detailedEvent.description
   ) : '';
+
+  const refinedLoc = detailedEvent ? getRefinedLocation(detailedEvent) : { venue: "", address: "" };
 
   return (
     <Layout 
@@ -411,48 +469,158 @@ const App: React.FC = () => {
       {detailedEvent && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300" onClick={closeDetails} />
-          <div ref={modalRef} className="relative bg-white rounded-[2.5rem] w-full max-w-2xl p-8 md:p-12 overflow-y-auto max-h-[90vh] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col">
-            <button onClick={closeDetails} className="absolute top-8 right-8 p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-all">
+          <div ref={modalRef} className="relative bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
+            <button onClick={closeDetails} className="absolute top-6 right-6 z-30 p-2 text-white bg-black/20 hover:bg-white hover:text-gray-900 rounded-full transition-all backdrop-blur-md">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <header className="mb-8 pr-12">
-              <div className="flex flex-wrap gap-2 mb-4">
-                <span className="px-4 py-1.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">{detailedEvent.category}</span>
-                {detailedEvent.userCreated && <span className="px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block">Community Post</span>}
-                {getPriceDisplay(detailedEvent) && (
-                  <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] inline-block border ${getPriceDisplay(detailedEvent)!.className}`}>
-                    {getPriceDisplay(detailedEvent)!.text}
+            
+            {/* Hero Image in Modal */}
+            <div className="relative h-64 md:h-80 w-full shrink-0">
+              <img 
+                src={detailedEvent.imageUrl || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=1200`} 
+                alt={detailedEvent.title} 
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
+              <div className="absolute bottom-6 left-8 flex flex-wrap gap-2">
+                <span className="px-4 py-1.5 bg-orange-600 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg">
+                  {detailedEvent.category}
+                </span>
+                {detailedEvent.userCreated && (
+                  <span className="px-4 py-1.5 bg-blue-600 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg">
+                    Community Post
                   </span>
                 )}
               </div>
-              <h2 className="text-3xl md:text-5xl font-black text-gray-900 leading-[1.1] mb-6 tracking-tighter">{detailedEvent.title}</h2>
-              <div className="flex flex-wrap gap-x-8 gap-y-4 text-sm font-bold text-gray-500">
-                <span className="flex items-center text-gray-900"><svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" strokeWidth={2.5}/></svg>{detailedEvent.date}</span>
-                <span className="flex items-center text-gray-900"><svg className="w-5 h-5 mr-3 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" strokeWidth={2.5}/></svg>{detailedEvent.venue || detailedEvent.location}</span>
-              </div>
-            </header>
-            <div className="flex-grow prose prose-orange max-w-none mb-4 overflow-y-auto">
-              <p className="text-gray-600 text-lg leading-relaxed font-medium">
-                {modalDescription}
-              </p>
-              {detailedEvent.description.length > 250 && (
-                <button 
-                  onClick={() => setIsModalDescExpanded(!isModalDescExpanded)}
-                  className="text-orange-600 text-xs font-black uppercase tracking-widest hover:underline transition-all mt-2 flex items-center gap-1 group"
-                >
-                  {isModalDescExpanded ? 'Read Less' : 'Read More'}
-                  <svg className={`w-3 h-3 transform transition-transform ${isModalDescExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-              )}
             </div>
-            <footer className="flex flex-col sm:flex-row gap-4 pt-10 border-t border-gray-100 mt-auto">
-              <a href={detailedEvent.sourceUrl || `https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} target="_blank" rel="noopener noreferrer" className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200">View Official Site</a>
-              <button onClick={() => addToCalendar(detailedEvent)} className="px-8 py-5 bg-gray-50 text-gray-900 border-2 border-gray-200 font-black rounded-2xl flex items-center justify-center hover:border-orange-500 hover:text-orange-600 transition-all">
-                Add to Calendar
-              </button>
-            </footer>
+
+            <div className="p-8 md:p-12 pt-0 overflow-y-auto">
+              <header className="mb-10">
+                <h2 className="text-3xl md:text-5xl font-black text-gray-900 leading-[1.1] mb-8 tracking-tighter">
+                  {detailedEvent.title}
+                </h2>
+                
+                {/* Enhanced Logistics Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12 border-y border-gray-100 py-8">
+                  {/* Date Item */}
+                  <div className="flex items-start group">
+                    <div className="p-3 bg-orange-50 rounded-2xl mr-4 group-hover:bg-orange-100 transition-colors">
+                      <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Date</p>
+                      <p className="text-gray-900 font-black text-sm">{detailedEvent.date || 'To be announced'}</p>
+                    </div>
+                  </div>
+
+                  {/* Time Item */}
+                  <div className="flex items-start group">
+                    <div className="p-3 bg-orange-50 rounded-2xl mr-4 group-hover:bg-orange-100 transition-colors">
+                      <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Schedule</p>
+                      <p className="text-gray-900 font-black text-sm">
+                        {detailedEvent.time ? (
+                          <>
+                            {detailedEvent.time}
+                            {detailedEvent.endTime ? ` — ${detailedEvent.endTime}` : ''}
+                          </>
+                        ) : 'Check official site for times'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Location Item */}
+                  <div className="flex items-start group">
+                    <div className="p-3 bg-orange-50 rounded-2xl mr-4 group-hover:bg-orange-100 transition-colors">
+                      <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Location</p>
+                      <p className="text-gray-900 font-black text-sm truncate" title={refinedLoc.venue}>
+                        {refinedLoc.venue}
+                      </p>
+                      <p className="text-gray-400 text-xs font-medium truncate" title={refinedLoc.address}>
+                        {refinedLoc.address}
+                      </p>
+                      <a 
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(refinedLoc.venue + ' ' + refinedLoc.address)}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-orange-600 text-[10px] font-black uppercase tracking-widest hover:underline flex items-center mt-2"
+                      >
+                        Get Directions
+                        <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Admission Item */}
+                  <div className="flex items-start group">
+                    <div className="p-3 bg-orange-50 rounded-2xl mr-4 group-hover:bg-orange-100 transition-colors">
+                      <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1">Admission</p>
+                      <div className="flex items-center">
+                        <p className="text-gray-900 font-black text-sm mr-2">{detailedEvent.isFree ? 'Free' : (detailedEvent.price || detailedEvent.priceLevel || 'Ticketed')}</p>
+                        {getPriceDisplay(detailedEvent) && !detailedEvent.isFree && (
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border ${getPriceDisplay(detailedEvent)!.className}`}>
+                            {getPriceDisplay(detailedEvent)!.text}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </header>
+
+              <div className="mb-12">
+                <p className="text-gray-600 text-lg leading-relaxed font-medium">
+                  {modalDescription}
+                </p>
+                {detailedEvent.description.length > 250 && (
+                  <button 
+                    onClick={() => setIsModalDescExpanded(!isModalDescExpanded)}
+                    className="text-orange-600 text-xs font-black uppercase tracking-widest hover:underline transition-all mt-4 flex items-center gap-2 group"
+                  >
+                    {isModalDescExpanded ? 'View Less Details' : 'View Full Description'}
+                    <svg className={`w-3.5 h-3.5 transform transition-transform ${isModalDescExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+
+              <footer className="flex flex-col sm:flex-row gap-4 pt-10 border-t border-gray-100 mt-auto">
+                <a 
+                  href={detailedEvent.sourceUrl || `https://www.google.com/search?q=${encodeURIComponent(detailedEvent.title + ' ' + (detailedEvent.cityName || ''))}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="flex-1 px-8 py-5 bg-orange-600 text-white font-black rounded-2xl text-center hover:bg-orange-700 transition-all shadow-xl shadow-orange-200 active:scale-95"
+                >
+                  Visit Official Event Site
+                </a>
+                <button 
+                  onClick={() => addToCalendar(detailedEvent)} 
+                  className="px-8 py-5 bg-white text-gray-900 border-2 border-gray-100 font-black rounded-2xl flex items-center justify-center hover:border-orange-500 hover:text-orange-600 transition-all active:scale-95"
+                >
+                  Add to My Calendar
+                </button>
+              </footer>
+            </div>
           </div>
         </div>
       )}
