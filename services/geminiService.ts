@@ -1,30 +1,16 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { EventActivity, GroundingSource } from "../types";
+import { EventActivity, GroundingSource, Category } from "../types";
 
-// Persistent Cache Configuration
-const CACHE_KEY_PREFIX = "itm_cache_v2_";
-const VENUE_CACHE_KEY = "itm_venue_cache";
-
-// Local Directory for Instant Autocomplete (Tulsa, OKC, Dallas, Houston staples)
-const LOCAL_DIRECTORY = [
-    { name: "BOK Center", address: "200 S Denver Ave, Tulsa, OK 74103", lat: 36.153, lng: -95.993 },
-    { name: "Cains Ballroom", address: "423 N Main St, Tulsa, OK 74103", lat: 36.160, lng: -95.992 },
-    { name: "Paycom Center", address: "100 W Reno Ave, Oklahoma City, OK 73102", lat: 35.463, lng: -97.515 },
-    { name: "Scissortail Park", address: "300 SW 7th St, Oklahoma City, OK 73109", lat: 35.460, lng: -97.518 },
-    { name: "American Airlines Center", address: "2500 Victory Ave, Dallas, TX 75219", lat: 32.790, lng: -96.810 },
-    { name: "Klyde Warren Park", address: "2012 Woodall Rodgers Fwy, Dallas, TX 75201", lat: 32.789, lng: -96.801 },
-    { name: "Minute Maid Park", address: "501 Crawford St, Houston, TX 77002", lat: 29.757, lng: -95.355 },
-    { name: "Discovery Green", address: "1500 McKinney St, Houston, TX 77010", lat: 29.753, lng: -95.359 }
-];
-
-let groundedQuotaExhaustedUntil = 0;
-let globalQuotaExhaustedUntil = 0;
+const CACHE_KEY_PREFIX = "itm_cache_v8_";
 
 const extractJson = (text: string) => {
-  const jsonMatch = text.match(/\[[\s\S]*\]/);
-  if (jsonMatch) return jsonMatch[0];
-  return text.replace(/```json/g, '').replace(/```/g, '').trim();
+  if (!text) return "[]";
+  const startIdx = text.indexOf('[');
+  const endIdx = text.lastIndexOf(']');
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    return text.substring(startIdx, endIdx + 1);
+  }
+  return text.trim();
 };
 
 const getPersistentCache = (key: string) => {
@@ -49,26 +35,10 @@ const setPersistentCache = (key: string, data: any) => {
 
 export interface FetchOptions {
   category?: string;
-  startDate?: string;
-  endDate?: string;
   keyword?: string;
   page?: number;
-  userLocation?: { latitude: number; longitude: number };
   forceRefresh?: boolean;
 }
-
-export const getQuotaStatus = () => {
-  const now = Date.now();
-  return {
-    isGroundedExhausted: groundedQuotaExhaustedUntil > now,
-    isGlobalExhausted: globalQuotaExhaustedUntil > now
-  };
-};
-
-export const resetQuotaStandby = () => {
-  groundedQuotaExhaustedUntil = 0;
-  globalQuotaExhaustedUntil = 0;
-};
 
 export const getCacheKey = (cityName: string | 'All', options: FetchOptions = {}) => {
   const { category, keyword, page } = options;
@@ -81,18 +51,32 @@ export const getCachedData = (key: string) => {
 };
 
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean) {
-  const { category, keyword, page = 1 } = options;
+  const { category, keyword } = options;
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = "gemini-3-flash-preview";
-  const currentDateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  
+  const now = new Date();
+  const currentDateStr = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-  const prompt = `Act as a local event concierge for ${cityName}. Find 8-10 REAL upcoming events.
-  Current Date: ${currentDateStr}. Page: ${page}.
-  Filters: Category: "${category || 'All'}". ${keyword ? `Keywords: "${keyword}"` : ''}
-  Return a valid JSON array matching the schema: title, category, description, date (MM/DD/YYYY), time, location, venue, cityName, sourceUrl, imageUrl, lat, lng, price, isFree.`;
+  // Explicitly prioritize youth and high school sports schedules
+  const categoryContext = category === 'Sports' 
+    ? 'Category: Sports (CRITICAL: Include schedules for Local High School Varsity games, Youth Tournaments, and Club Sports alongside Professional teams)' 
+    : (category && category !== 'All' ? `Category: ${category}` : '');
+
+  const prompt = `REAL-TIME SOURCE: Find 10 upcoming events and schedules in ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. 
+  Today: ${currentDateStr}.
+  Source priority: MaxPreps, School District Calendars (TPS, OKCPD, DISD, HISD), Ticketmaster, Eventbrite.
+  ${categoryContext}
+  ${keyword ? `Keyword: ${keyword}` : ''}
+  Return JSON: [{title, category, description, date(MM/DD/YYYY), time, venue, location, cityName, sourceUrl, imageUrl, price, isFree, organizerName, organizerUrl, organizerContact}].
+  STRICT: Normalize "cityName" to Tulsa|Oklahoma City|Dallas|Houston. For HS sports, "organizerName" should be the school name.`;
 
   const config: any = {
     responseMimeType: "application/json",
+    systemInstruction: `You are the high-speed event engine for Inside The Metro. 
+    Accuracy and Speed are 10/10 priority. 
+    When sourcing "Sports", you MUST include local high school athletic schedules (Football, Basketball, Baseball) and youth competitive tournaments. Use MaxPreps and district sites as primary sources.
+    Normalize city names to: Tulsa, Oklahoma City, Dallas, Houston.`,
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -103,22 +87,23 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
           description: { type: Type.STRING },
           date: { type: Type.STRING },
           time: { type: Type.STRING },
-          location: { type: Type.STRING },
           venue: { type: Type.STRING },
+          location: { type: Type.STRING },
           cityName: { type: Type.STRING },
           sourceUrl: { type: Type.STRING },
           imageUrl: { type: Type.STRING },
-          lat: { type: Type.NUMBER },
-          lng: { type: Type.NUMBER },
           price: { type: Type.STRING },
-          isFree: { type: Type.BOOLEAN }
+          isFree: { type: Type.BOOLEAN },
+          organizerName: { type: Type.STRING },
+          organizerUrl: { type: Type.STRING },
+          organizerContact: { type: Type.STRING }
         },
-        required: ["title", "category", "description", "location", "date"]
+        required: ["title", "category", "description", "date", "cityName", "venue"]
       }
     }
   };
 
-  if (useGrounding && groundedQuotaExhaustedUntil < Date.now()) {
+  if (useGrounding) {
     config.tools = [{ googleSearch: {} }];
   }
 
@@ -128,10 +113,11 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
     config
   });
 
-  const rawEvents = JSON.parse(extractJson(response.text));
+  const rawEvents = JSON.parse(extractJson(response.text || "[]"));
+  
   const events: EventActivity[] = rawEvents.map((e: any, index: number) => ({
     ...e,
-    id: `live-${cityName}-${page}-${index}-${Date.now()}`
+    id: `live-${Date.now()}-${index}`
   }));
 
   const sources: GroundingSource[] = [];
@@ -145,54 +131,31 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   return { events, sources };
 }
 
-export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}): Promise<{ events: EventActivity[], sources: GroundingSource[], status: string } | null> => {
+export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}) => {
   const cacheKey = getCacheKey(cityName, options);
-  const now = Date.now();
-
-  if (globalQuotaExhaustedUntil > now && !options.forceRefresh) {
-    const cached = getPersistentCache(cacheKey);
-    return cached ? { ...cached.data, status: 'cache' } : null;
-  }
-
+  
   try {
-    const isSearchDisabled = groundedQuotaExhaustedUntil > now;
-    const result = await queryGemini(cityName, options, !isSearchDisabled);
-    const finalResult = { ...result, status: (result.sources.length > 0 ? 'grounded' : 'ai') };
+    const result = await queryGemini(cityName, options, true);
+    const finalResult = { ...result, status: result.sources.length > 0 ? 'grounded' : 'ai' };
     setPersistentCache(cacheKey, finalResult);
     return finalResult;
-  } catch (error: any) {
-    if (error?.status === 429) {
-        if (error?.message?.includes('Search')) groundedQuotaExhaustedUntil = now + (10 * 60 * 1000);
-        else globalQuotaExhaustedUntil = now + (5 * 60 * 1000);
+  } catch (error) {
+    try {
+      const result = await queryGemini(cityName, options, false);
+      return { ...result, status: 'ai' };
+    } catch (e) {
+      return null;
     }
-    const cached = getPersistentCache(cacheKey);
-    return cached ? { ...cached.data, status: 'cache' } : null;
   }
 };
 
-export const searchPlaces = async (input: string): Promise<Array<{ name: string; address: string; lat: number; lng: number }>> => {
-  if (input.length < 2) return [];
-
-  // 1. INSTANT LOCAL CHECK (Makes autocomplete feel zero-lag)
-  const localMatches = LOCAL_DIRECTORY.filter(v => 
-    v.name.toLowerCase().includes(input.toLowerCase()) || 
-    v.address.toLowerCase().includes(input.toLowerCase())
-  );
-  if (localMatches.length > 0 && input.length < 6) return localMatches;
-
-  // 2. API CHECK (For specific addresses)
-  if (globalQuotaExhaustedUntil > Date.now()) return localMatches;
-
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `Identify top 5 locations for: "${input}" in Tulsa, OKC, Dallas or Houston. Return JSON: [{name, address, lat, lng}].`,
-      config: { responseMimeType: "application/json" }
-    });
-    const results = JSON.parse(extractJson(response.text || "[]"));
-    return [...localMatches, ...results].slice(0, 5);
-  } catch (error) {
-    return localMatches;
-  }
+export const searchPlaces = async (input: string) => {
+  if (input.length < 3) return [];
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const response = await ai.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: `Find 5 major venues or high school stadiums for: "${input}" in Tulsa, OKC, Dallas or Houston. JSON: [{name, address, lat, lng}].`,
+    config: { responseMimeType: "application/json" }
+  });
+  return JSON.parse(extractJson(response.text || "[]"));
 };

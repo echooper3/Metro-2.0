@@ -29,6 +29,9 @@ export interface EventActivity {
   price?: string;
   isFree?: boolean;
   priceLevel?: string;
+  organizerName?: string;
+  organizerUrl?: string;
+  organizerContact?: string;
 }
 
 export interface GroundingSource {
