@@ -87,30 +87,42 @@ const App: React.FC = () => {
     if (modalContent) modalContent.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // Strict local filtering for UI robustness
   const filteredEvents = useMemo(() => {
-    if (activeCategory === 'All') return allEvents;
-    return allEvents.filter(e => e.category === activeCategory);
-  }, [allEvents, activeCategory]);
+    return allEvents.filter(e => {
+      const matchesCategory = activeCategory === 'All' || e.category === activeCategory;
+      const matchesCity = !selectedCity || e.cityName === selectedCity.name;
+      const matchesQuery = !searchQuery || e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.description.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesCity && matchesQuery;
+    });
+  }, [allEvents, activeCategory, selectedCity, searchQuery]);
 
   const relatedEvents = useMemo(() => {
     if (!detailedEvent) return [];
     return allEvents
       .filter(e => e.id !== detailedEvent.id && (e.category === detailedEvent.category || e.cityName === detailedEvent.cityName))
-      .slice(0, 6);
-  }, [detailedEvent, allEvents]);
+      .slice(0, 4);
+  }, [allEvents, detailedEvent]);
 
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
     const requestId = ++fetchIdRef.current;
     const isNextPage = (options.page || 1) > 1;
+    const targetCategory = options.category || activeCategory;
 
+    // Determine Seed Baseline
     let cityId = cityName === 'All' ? 'global' : CITIES.find(c => c.name === cityName)?.id || 'global';
     let seeds = cityId === 'global' ? [...GLOBAL_SEED_EVENTS] : [...(SEED_EVENTS[cityId] || [])];
-    if (options.category && options.category !== 'All') {
-      seeds = seeds.filter(s => s.category === options.category);
+    
+    // Preliminary filtering for seeds to show immediate relevant data
+    if (targetCategory !== 'All') {
+      seeds = seeds.filter(s => s.category === targetCategory);
+    }
+    if (searchQuery) {
+      seeds = seeds.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase()));
     }
 
     const currentTitles = allEvents.map(e => e.title);
-    const fetchOptions = { ...options, excludeTitles: currentTitles };
+    const fetchOptions = { ...options, category: targetCategory, excludeTitles: currentTitles };
 
     if (!isNextPage) {
       const cacheKey = getCacheKey(cityName, fetchOptions);
@@ -155,7 +167,10 @@ const App: React.FC = () => {
             const liveEvents = data.events;
             const liveTitles = new Set(liveEvents.map(l => l.title.toLowerCase()));
             const uniqueSeeds = seeds.filter(s => !liveTitles.has(s.title.toLowerCase()));
-            setAllEvents([...liveEvents, ...uniqueSeeds]);
+            
+            // Merge and ensure strict filtering matches current view
+            const merged = [...liveEvents, ...uniqueSeeds];
+            setAllEvents(merged);
             setSources(data.sources);
             setSourceStatus(data.status as any);
           }
@@ -170,21 +185,7 @@ const App: React.FC = () => {
       setIsRefreshing(false);
       setIsPageLoading(false);
     }
-  }, [allEvents]);
-
-  const prefetchCategory = useCallback((cat: Category) => {
-    // Only prefetch if we haven't hit the limit yet
-    if (sourceStatus === 'quota-limited') return;
-    if (prefetchTimeoutRef.current[cat]) return;
-    
-    const cityName = selectedCity?.name || 'All';
-    const cacheKey = getCacheKey(cityName, { category: cat, keyword: searchQuery || undefined, page: 1 });
-    if (!getCachedData(cacheKey)) {
-      prefetchTimeoutRef.current[cat] = window.setTimeout(() => {
-        fetchEvents(cityName, { category: cat, keyword: searchQuery || undefined, page: 1 });
-      }, 500); // Increased delay to be more conservative with API calls
-    }
-  }, [selectedCity, searchQuery, sourceStatus]);
+  }, [allEvents, activeCategory, searchQuery]);
 
   const handleCitySelect = useCallback((city: City) => {
     startTransition(() => {
@@ -223,6 +224,8 @@ const App: React.FC = () => {
     setSelectedCity(null);
     setAllEvents([]);
     setPage(1);
+    setActiveCategory('All');
+    setSearchQuery('');
     setSourceStatus('seed');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
@@ -303,7 +306,9 @@ const App: React.FC = () => {
               <button onClick={handleHome} className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 mb-12 flex items-center gap-3 group">
                 <span className="group-hover:-translate-x-1 transition-transform">←</span> Hub Selection
               </button>
-              <h2 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter leading-none">{view === AppView.SEARCH_RESULTS ? `Results: ${searchQuery}` : selectedCity?.name}</h2>
+              <h2 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter leading-none line-clamp-2">
+                {view === AppView.SEARCH_RESULTS ? `Results: ${searchQuery}` : selectedCity?.name}
+              </h2>
               <div className="flex flex-wrap items-center gap-6 mt-12">
                 {isRefreshing ? (
                   <div className="flex items-center gap-5 bg-white/5 border border-white/10 px-8 py-4 rounded-3xl">
@@ -324,7 +329,7 @@ const App: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-20">
             <div className="flex overflow-x-auto scrollbar-hide space-x-4 bg-white p-4 rounded-[2rem] shadow-2xl shadow-gray-200 border border-gray-100">
               {CATEGORIES.map(cat => (
-                <button key={cat} onClick={() => handleCategoryClick(cat)} onMouseEnter={() => prefetchCategory(cat)} className={`px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-orange-600 text-white shadow-xl shadow-orange-200' : 'bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600'}`}>{cat}</button>
+                <button key={cat} onClick={() => handleCategoryClick(cat)} className={`px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-orange-600 text-white shadow-xl shadow-orange-200' : 'bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600'}`}>{cat}</button>
               ))}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-16 min-h-[500px]">
@@ -346,14 +351,15 @@ const App: React.FC = () => {
                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-600">Loading More Batch Items</p>
                 </div>
               )}
-              {!hasMore && allEvents.length > 0 && (
+              {!hasMore && filteredEvents.length > 0 && (
                 <p className="text-gray-400 font-black uppercase tracking-[0.2em] text-[10px]">You've reached the end of the Metro feed</p>
               )}
             </div>
           </div>
         </div>
       )}
-
+      
+      {/* ... rest of the component remains same ... */}
       {showCreateModal && (
         <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <CreateEventModal onClose={() => setShowCreateModal(false)} onSave={ev => { addToast("Syncing event..."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} />
