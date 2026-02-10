@@ -32,6 +32,7 @@ export interface EventActivity {
   organizerName?: string;
   organizerUrl?: string;
   organizerContact?: string;
+  isLive?: boolean; // True if sourced from Google Search
 }
 
 export interface GroundingSource {

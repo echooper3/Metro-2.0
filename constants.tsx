@@ -42,27 +42,28 @@ const getRelDate = (daysOut: number) => {
   return `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}/${d.getFullYear()}`;
 };
 
-// Helper to generate a spread of events for a city
 const generateCitySeeds = (city: string): EventActivity[] => {
   const events: EventActivity[] = [];
   const categories: Category[] = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
   
   categories.forEach((cat, idx) => {
-    // Generate 3 events per category per city spread over 6 months
-    [15, 60, 150].forEach((days, dIdx) => {
+    [0, 2, 7, 30].forEach((days, dIdx) => {
+      const daysOffset = days + idx;
       events.push({
         id: `seed-${city.toLowerCase()}-${cat.toLowerCase()}-${dIdx}`,
         title: `${city} ${cat} Showcase: Series ${dIdx + 1}`,
         cityName: city,
         category: cat,
-        description: `Experience the best of ${cat} in the heart of ${city}. This recurring series features local favorites and specialized curators. Don't miss out on the ${dIdx === 0 ? 'upcoming' : dIdx === 1 ? 'mid-season' : 'season finale'} highlight.`,
-        date: getRelDate(days + idx),
+        description: `Experience the best of ${cat} in the heart of ${city}. This recurring series features local favorites and specialized curators. Don't miss out on the ${dIdx === 0 ? 'upcoming' : dIdx === 1 ? 'mid-season' : dIdx === 2 ? 'penultimate' : 'season finale'} highlight. Explore the rich heritage and community spirit of ${city}.`,
+        date: getRelDate(daysOffset),
         time: idx % 2 === 0 ? '7:00 PM' : '2:00 PM',
         venue: `${city} Central ${cat} Hub`,
         location: `Main St, ${city}`,
         price: idx % 3 === 0 ? '$25' : undefined,
         isFree: idx % 3 !== 0,
-        ageRestriction: cat === 'Night Life' ? '21+' : cat === 'Entertainment' && idx % 2 === 0 ? '18+' : 'All Ages',
+        // Increased probability and scope for trending seeds
+        isTrending: daysOffset <= 7, 
+        ageRestriction: cat === 'Night Life' ? '21+' : (cat === 'Entertainment' && idx % 2 === 0 ? '18+' : 'All Ages'),
         imageUrl: `https://images.unsplash.com/photo-${1500000000000 + idx * 1000 + dIdx}?auto=format&fit=crop&q=60&w=800`
       });
     });
@@ -82,4 +83,4 @@ export const GLOBAL_SEED_EVENTS: EventActivity[] = [
   ...SEED_EVENTS.okc.slice(0, 10),
   ...SEED_EVENTS.dallas.slice(0, 10),
   ...SEED_EVENTS.houston.slice(0, 10)
-];
+].map(e => ({...e, isTrending: true})); // Ensure landing page seeds are trending

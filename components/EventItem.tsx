@@ -56,14 +56,36 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
           className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`} 
           loading="lazy" 
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        
+        <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 items-end">
+          {event.isTrending && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-900 rounded-full shadow-[0_0_20px_rgba(249,115,22,0.4)] border border-orange-500/20 animate-in slide-in-from-right-4 duration-500">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-600"></span>
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-[0.15em]">Trending</span>
+            </div>
+          )}
+          
+          {event.isLive && (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/90 backdrop-blur-md rounded-full shadow-lg border border-emerald-400/30">
+              <div className="w-1.5 h-1.5 bg-emerald-200 rounded-full animate-pulse" />
+              <span className="text-[9px] font-black text-white uppercase tracking-[0.1em]">
+                {event.isVerified ? 'Verified' : 'Fast-Sync'}
+              </span>
+            </div>
+          )}
+        </div>
+
         <div className="absolute top-4 left-4 flex flex-wrap gap-2 pr-12">
           <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl backdrop-blur-md ${getCategoryColor(event.category)}`}>
             {event.category}
           </span>
           {event.ageRestriction && (
-            <span className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl backdrop-blur-md bg-gray-900 text-white border border-gray-800">
-              {event.ageRestriction}
+            <span className="px-2.5 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] shadow-2xl backdrop-blur-xl bg-slate-950/80 text-white border border-white/10 flex items-center justify-center">
+              <span className="mr-1 opacity-60">Age</span> {event.ageRestriction}
             </span>
           )}
           {event.price ? (
@@ -76,18 +98,10 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
             </span>
           ) : null}
         </div>
-        <button 
-          onClick={(e) => { e.stopPropagation(); onToggleSave?.(event); }} 
-          className={`absolute top-4 right-4 p-2.5 rounded-full transition-all backdrop-blur-md ${isSaved ? 'text-orange-600 bg-white shadow-xl' : 'text-white bg-black/20 hover:bg-white hover:text-orange-600'}`}
-        >
-          <svg className="w-5 h-5" fill={isSaved ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-          </svg>
-        </button>
       </div>
 
       <div className="p-7 flex flex-col flex-grow">
-        <h3 className="text-xl font-black text-gray-900 leading-tight mb-3 min-h-[3rem] line-clamp-2">
+        <h3 className="text-xl font-black text-gray-900 leading-tight mb-3 min-h-[3rem] line-clamp-2 group-hover:text-orange-600 transition-colors">
           {event.title}
         </h3>
         
@@ -97,7 +111,7 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
           </p>
           {shouldTruncate && (
             <button 
-              onClick={() => setIsExpanded(!isExpanded)}
+              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
               className={`mt-4 w-full flex items-center justify-center px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all border-2 ${
                 isExpanded 
                 ? 'bg-orange-600 text-white border-orange-600 shadow-lg shadow-orange-200' 
@@ -123,7 +137,7 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
               </span>
               {(event.location && event.location !== event.venue) && (
                 <span className="truncate text-gray-400 font-medium mt-0.5" title={event.location}>
-                  {event.location} {showCity && <span className="ml-1">({event.cityName})</span>}
+                  {event.location} {showCity && <span className="ml-1 text-orange-500/60 font-black">({event.cityName})</span>}
                 </span>
               )}
             </div>
@@ -132,7 +146,7 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
             <svg className="w-4 h-4 mr-3 text-orange-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            {formatFriendlyDate(event.date, event.time)}
+            <span className="text-gray-900">{formatFriendlyDate(event.date, event.time)}</span>
           </div>
         </div>
 
@@ -140,7 +154,7 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
           onClick={() => onOpenDetails(event)}
           className="mt-6 w-full py-4 bg-gray-900 text-white rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] hover:bg-orange-600 transition-all shadow-xl shadow-gray-100 active:scale-95"
         >
-          View Event Page
+          View Details
         </button>
       </div>
     </article>
