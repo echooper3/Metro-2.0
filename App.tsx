@@ -5,8 +5,9 @@ import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
 import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
-import { City, AppView, EventActivity, Category, GroundingSource } from './types';
+import { City, AppView, EventActivity, Category, GroundingSource, WeatherData } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
+import { fetchCityWeather } from './services/weatherService';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
@@ -22,6 +23,10 @@ const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LANDING);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
   const [allEvents, setAllEvents] = useState<EventActivity[]>(GLOBAL_SEED_EVENTS);
+  const allEventsRef = useRef(allEvents);
+  useEffect(() => {
+    allEventsRef.current = allEvents;
+  }, [allEvents]);
   const [sources, setSources] = useState<GroundingSource[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +38,7 @@ const App: React.FC = () => {
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
   const [sourceStatus, setSourceStatus] = useState<'live' | 'grounded' | 'ai' | 'seed' | 'cache' | 'quota-limited'>('seed');
   const [toasts, setToasts] = useState<Array<{ id: number, message: string }>>([]);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -42,7 +48,16 @@ const App: React.FC = () => {
   const [isPending, startTransition] = useTransition();
   const fetchIdRef = useRef(0);
 
-  // Load initial global data from cache or seeds
+  const updateWeather = useCallback(async (cityName: string) => {
+    try {
+      const data = await fetchCityWeather(cityName);
+      if (data) setWeather(data);
+    } catch (e) {
+      console.warn("Weather sync failed.");
+    }
+  }, []);
+
+  // Load initial global data and weather (Dallas as default for weather)
   useEffect(() => {
     const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });
     const cached = getCachedData(cacheKey);
@@ -50,7 +65,8 @@ const App: React.FC = () => {
       setAllEvents(cached.events);
       setSourceStatus('cache');
     }
-  }, []);
+    updateWeather('Dallas'); // Default region weather
+  }, [updateWeather]);
 
   useEffect(() => {
     if (isRefreshing || isVerifying || isPageLoading) {
@@ -69,8 +85,6 @@ const App: React.FC = () => {
 
   const handleOpenDetails = useCallback((event: EventActivity) => {
     setDetailedEvent(event);
-    const modalContent = document.getElementById('event-detail-scroll');
-    if (modalContent) modalContent.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   const filteredEvents = useMemo(() => {
@@ -100,6 +114,8 @@ const App: React.FC = () => {
     if (!isNextPage) {
       setIsRefreshing(true);
       setHasMore(true);
+      // Clear data only if no cache to show skeletons
+      if (!cached) setAllEvents([]);
     } else {
       setIsPageLoading(true);
     }
@@ -111,17 +127,19 @@ const App: React.FC = () => {
       if (result && result.events.length > 0) {
         startTransition(() => {
           if (isNextPage) {
-            setAllEvents(prev => {
-              const seen = new Set(prev.map(p => p.title.toLowerCase()));
-              return [...prev, ...result.events.filter(n => !seen.has(n.title.toLowerCase()))];
-            });
+            const seen = new Set(allEventsRef.current.map(p => p.title.toLowerCase()));
+            const newEvents = result.events.filter(n => !seen.has(n.title.toLowerCase()));
+            setAllEvents(prev => [...prev, ...newEvents]);
+            if (newEvents.length === 0 || result.events.length < 5) setHasMore(false);
           } else {
             setAllEvents(result.events);
             setSources(result.sources || []);
             setSourceStatus(result.status as any);
+            if (result.events.length < 5) setHasMore(false);
           }
-          if (result.events.length < 5) setHasMore(false);
         });
+      } else if (isNextPage) {
+        setHasMore(false);
       }
     } catch (err) {
       console.warn("Metropolitan Sync failed.");
@@ -144,7 +162,8 @@ const App: React.FC = () => {
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
-  }, [loadCityEvents]);
+    updateWeather(city.name);
+  }, [loadCityEvents, updateWeather]);
 
   const handleCategoryClick = useCallback((cat: Category) => {
     startTransition(() => {
@@ -175,14 +194,20 @@ const App: React.FC = () => {
     setSearchQuery('');
     setSourceStatus('seed');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+    updateWeather('Dallas');
+  }, [updateWeather]);
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && hasMore && !isRefreshing && !isPageLoading && view !== AppView.LANDING) {
         setPage(prev => {
           const nextPage = prev + 1;
-          loadCityEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined, page: nextPage });
+          loadCityEvents(selectedCity?.name || 'All', { 
+            category: activeCategory, 
+            keyword: searchQuery || undefined, 
+            page: nextPage,
+            excludeTitles: allEventsRef.current.map(e => e.title)
+          });
           return nextPage;
         });
       }
@@ -192,7 +217,13 @@ const App: React.FC = () => {
   }, [hasMore, isRefreshing, isPageLoading, view, activeCategory, searchQuery, selectedCity, loadCityEvents]);
 
   return (
-    <Layout onHome={handleHome} onAuth={() => setShowAuthModal(true)} onSearch={handleGlobalSearch} onPostEvent={() => setShowCreateModal(true)}>
+    <Layout 
+      onHome={handleHome} 
+      onAuth={() => setShowAuthModal(true)} 
+      onSearch={handleGlobalSearch} 
+      onPostEvent={() => setShowCreateModal(true)}
+      weather={weather}
+    >
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-2 pointer-events-none">
         {toasts.map(t => (<div key={t.id} className="bg-gray-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl animate-in slide-in-from-bottom-4">{t.message}</div>))}
       </div>
@@ -271,7 +302,6 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-16 min-h-[500px]">
-              {/* Show Skeletons ONLY during initial refresh/load when no filtered items are ready yet */}
               {isRefreshing && filteredEvents.length === 0 ? (
                 Array.from({ length: 6 }).map((_, i) => <EventSkeleton key={i} />)
               ) : filteredEvents.length > 0 ? (
@@ -288,7 +318,11 @@ const App: React.FC = () => {
             </div>
 
             <div ref={loaderRef} className="mt-16 py-10 flex flex-col items-center justify-center">
-              {isPageLoading && <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div>}
+              {isPageLoading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 w-full animate-in fade-in duration-500">
+                  {Array.from({ length: 3 }).map((_, i) => <EventSkeleton key={i} />)}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -319,26 +353,45 @@ const App: React.FC = () => {
             <div className="flex flex-wrap gap-2 mb-6">
                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.category}</span>
                <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.cityName}</span>
+               {detailedEvent.ageRestriction && <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.ageRestriction}</span>}
             </div>
             <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-8 tracking-tighter leading-tight">{detailedEvent.title}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10 pb-10 border-b border-gray-100">
-               <div><p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Location</p><p className="font-black text-gray-900">{detailedEvent.venue}</p><p className="text-xs text-gray-500">{detailedEvent.location}</p></div>
-               <div><p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Schedule</p><p className="font-black text-gray-900">{detailedEvent.date}</p><p className="text-xs text-gray-500">{detailedEvent.time}</p></div>
+            
+            <div className={`grid grid-cols-1 ${detailedEvent.organizerName ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-8 mb-10 pb-10 border-b border-gray-100`}>
+               <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Location</p>
+                  <p className="font-black text-gray-900">{detailedEvent.venue}</p>
+                  <p className="text-xs text-gray-500">{detailedEvent.location}</p>
+               </div>
+               <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Schedule</p>
+                  <p className="font-black text-gray-900">{detailedEvent.date}</p>
+                  <p className="text-xs text-gray-500">{detailedEvent.time}</p>
+               </div>
+               {detailedEvent.organizerName && (
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Hosted By</p>
+                    <p className="font-black text-gray-900 leading-tight mb-1">{detailedEvent.organizerName}</p>
+                    {detailedEvent.organizerUrl && (
+                      <a href={detailedEvent.organizerUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-orange-600 font-black uppercase tracking-widest hover:underline block">
+                        Host Website
+                      </a>
+                    )}
+                    {detailedEvent.organizerContact && <p className="text-xs text-gray-500 mt-1 font-medium">{detailedEvent.organizerContact}</p>}
+                  </div>
+               )}
             </div>
+
             <p className="text-gray-600 text-lg leading-relaxed mb-12">{detailedEvent.description}</p>
-            {detailedEvent.sourceUrl && (
-              <a href={detailedEvent.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-10 py-5 bg-gray-900 text-white font-black rounded-2xl hover:bg-orange-600 transition-all shadow-xl uppercase tracking-widest text-[10px]">Official Website</a>
-            )}
+            
+            <div className="flex flex-wrap gap-4">
+              {detailedEvent.sourceUrl && (
+                <a href={detailedEvent.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-10 py-5 bg-gray-900 text-white font-black rounded-2xl hover:bg-orange-600 transition-all shadow-xl uppercase tracking-widest text-[10px]">Official Listing</a>
+              )}
+            </div>
           </div>
         </div>
       )}
-      <style>{`
-        @keyframes loading-bar {
-          0% { width: 0; left: 0; }
-          50% { width: 100%; left: 0; }
-          100% { width: 0; left: 100%; }
-        }
-      `}</style>
     </Layout>
   );
 };

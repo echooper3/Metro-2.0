@@ -61,9 +61,11 @@ const generateCitySeeds = (city: string): EventActivity[] => {
         location: `Main St, ${city}`,
         price: idx % 3 === 0 ? '$25' : undefined,
         isFree: idx % 3 !== 0,
-        // Increased probability and scope for trending seeds
         isTrending: daysOffset <= 7, 
         ageRestriction: cat === 'Night Life' ? '21+' : (cat === 'Entertainment' && idx % 2 === 0 ? '18+' : 'All Ages'),
+        organizerName: `${city} ${cat} Association`,
+        organizerUrl: `https://www.inside-the-metro.com/hosts/${city.toLowerCase()}`,
+        organizerContact: `contact@${city.toLowerCase()}-${cat.toLowerCase().replace(/\s/g, '')}.org`,
         imageUrl: `https://images.unsplash.com/photo-${1500000000000 + idx * 1000 + dIdx}?auto=format&fit=crop&q=60&w=800`
       });
     });
@@ -83,4 +85,4 @@ export const GLOBAL_SEED_EVENTS: EventActivity[] = [
   ...SEED_EVENTS.okc.slice(0, 10),
   ...SEED_EVENTS.dallas.slice(0, 10),
   ...SEED_EVENTS.houston.slice(0, 10)
-].map(e => ({...e, isTrending: true})); // Ensure landing page seeds are trending
+].map(e => ({...e, isTrending: true}));

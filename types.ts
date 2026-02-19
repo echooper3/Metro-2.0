@@ -7,6 +7,13 @@ export interface City {
   description: string;
 }
 
+export interface WeatherData {
+  temp: number;
+  condition: string;
+  cityName: string;
+  unit: 'F' | 'C';
+}
+
 export interface EventActivity {
   id: string;
   title: string;
@@ -33,6 +40,7 @@ export interface EventActivity {
   organizerUrl?: string;
   organizerContact?: string;
   isLive?: boolean; // True if sourced from Google Search
+  isVerified?: boolean;
 }
 
 export interface GroundingSource {

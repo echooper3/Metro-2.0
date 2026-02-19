@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { EventActivity, GroundingSource, Category } from "../types";
 
 const CACHE_KEY_PREFIX = "itm_cache_v15_";
@@ -81,10 +81,15 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List REAL future events.`;
   if (category && category !== 'All') context += ` Cat: ${category}.`;
   if (keyword) context += ` Search: ${keyword}.`;
+  if (page > 1) context += ` This is page ${page} of results. Provide completely different events from typical top results.`;
+  if (options.excludeTitles && options.excludeTitles.length > 0) {
+    context += ` DO NOT include these events: ${options.excludeTitles.slice(-20).join(', ')}.`;
+  }
 
   const config: any = {
+    thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     responseMimeType: "application/json",
-    systemInstruction: "JSON ONLY. No markdown. No text outside array. Valid JSON schema. Identify age restrictions (e.g., 21+, All Ages).",
+    systemInstruction: "JSON ONLY. No markdown. No text outside array. Valid JSON schema. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer/host name, website, and contact info if available.",
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -102,7 +107,10 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
           imageUrl: { type: Type.STRING },
           price: { type: Type.STRING },
           isFree: { type: Type.BOOLEAN },
-          ageRestriction: { type: Type.STRING, description: "Age requirement for the event, e.g., 21+, 18+, All Ages" }
+          ageRestriction: { type: Type.STRING, description: "Age requirement for the event, e.g., 21+, 18+, All Ages" },
+          organizerName: { type: Type.STRING, description: "Name of the host or organization" },
+          organizerUrl: { type: Type.STRING, description: "Official website of the organizer" },
+          organizerContact: { type: Type.STRING, description: "Email or phone for the organizer" }
         },
         required: ["title", "category", "description", "date", "cityName", "venue"]
       }
@@ -160,7 +168,9 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     else if (result.sources.length > 0) status = 'grounded';
 
     const finalResult = { ...result, status };
-    if (finalResult.events.length > 0) setPersistentCache(cacheKey, finalResult);
+    if (finalResult.events.length > 0 && (!options.page || options.page === 1)) {
+      setPersistentCache(cacheKey, finalResult);
+    }
     
     activeRequests.delete(cacheKey);
     return finalResult;
@@ -184,7 +194,10 @@ export const searchPlaces = async (input: string) => {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Venue lookup OK/TX: "${input}". Return JSON: [{name, address, lat, lng}]. Limit 5.`,
-      config: { responseMimeType: "application/json" }
+      config: { 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+        responseMimeType: "application/json" 
+      }
     });
     return JSON.parse(extractJson(response.text || "[]"));
   } catch (e) { 

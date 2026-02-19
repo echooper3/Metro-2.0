@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { CATEGORIES, CITIES } from '../constants';
 import { EventActivity, Category } from '../types';
 import { searchPlaces } from '../services/geminiService';
+import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -38,12 +39,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
   });
 
   const [addressInput, setAddressInput] = useState('');
-  const [suggestions, setSuggestions] = useState<Array<{ name: string; address: string; lat: number; lng: number }>>([]);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   
   const [isPending, startTransition] = useTransition();
   const searchTimeoutRef = useRef<number | null>(null);
@@ -58,25 +60,54 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
     searchTimeoutRef.current = window.setTimeout(async () => {
       setIsSearching(true);
       try {
-        const results = await searchPlaces(addressInput);
-        // Performance: Use transition for suggestion state to prevent input lag
+        // We use a hybrid approach: Call Nominatim for address accuracy
+        // But we could also call Gemini if we wanted venue-specific intelligence.
+        // Nominatim is better for "Place Autocomplete" as requested.
+        const results = await fetchAddressSuggestions(addressInput);
         startTransition(() => {
           setSuggestions(results);
           setShowSuggestions(results.length > 0);
         });
       } catch (e) {
-        console.error("Venue search failed", e);
+        console.error("Location search failed", e);
       } finally {
         setIsSearching(false);
       }
-    }, 400); // Slightly longer debounce for better batching
+    }, 400);
     return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
   }, [addressInput]);
 
-  const handleSelectSuggestion = (s: typeof suggestions[0]) => {
-    setFormData(prev => ({ ...prev, venue: s.name, location: s.address, lat: s.lat, lng: s.lng }));
-    setAddressInput(s.name);
+  const handleSelectSuggestion = (s: LocationSuggestion) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      venue: s.name, 
+      location: s.address, 
+      lat: s.lat, 
+      lng: s.lng 
+    }));
+    setAddressInput(s.address);
     setShowSuggestions(false);
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setIsLocating(true);
+    try {
+      const pos = await getCurrentPosition();
+      const address = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+      if (address) {
+        setAddressInput(address);
+        setFormData(prev => ({
+          ...prev,
+          location: address,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude
+        }));
+      }
+    } catch (e) {
+      console.error("Geolocation failed:", e);
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +143,27 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
 
     onSave(finalEvent);
     onClose();
+  };
+
+  const getSuggestionIcon = (type: LocationSuggestion['type']) => {
+    switch (type) {
+      case 'venue': return (
+        <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+      );
+      case 'city': return (
+        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2.945M8 3.935A9 9 0 1120.065 11H18a2 2 0 00-2 2v1a2 2 0 01-2 2 2 2 0 01-2-2v-2.945" />
+        </svg>
+      );
+      default: return (
+        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      );
+    }
   };
 
   return (
@@ -179,17 +231,39 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
           </div>
 
           <div className="space-y-2 relative">
-            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Venue Search (Gemini Powered)</label>
+            <div className="flex items-center justify-between ml-1 mb-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Address Autocomplete</label>
+              <button 
+                type="button" 
+                onClick={handleUseCurrentLocation}
+                disabled={isLocating}
+                className="text-[9px] font-black uppercase tracking-[0.15em] text-orange-600 hover:text-orange-700 flex items-center transition-colors disabled:opacity-50"
+              >
+                {isLocating ? (
+                  <span className="flex items-center"><div className="w-2 h-2 border border-orange-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> Locating...</span>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    Use Current
+                  </>
+                )}
+              </button>
+            </div>
             <div className="relative">
-              <input required type="text" placeholder="Start typing venue name..." className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all pr-12" value={addressInput} onChange={e => setAddressInput(e.target.value)} onFocus={() => setShowSuggestions(suggestions.length > 0)} />
+              <input required type="text" placeholder="Start typing address or venue..." className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all pr-12" value={addressInput} onChange={e => setAddressInput(e.target.value)} onFocus={() => setShowSuggestions(suggestions.length > 0)} />
               {isSearching && <div className="absolute right-4 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}
             </div>
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+              <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in slide-in-from-top-2 duration-200">
                 {suggestions.map((s, idx) => (
-                  <button key={idx} type="button" onClick={() => handleSelectSuggestion(s)} className="w-full text-left px-5 py-4 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0">
-                    <div className="text-xs font-black text-gray-900">{s.name}</div>
-                    <div className="text-[10px] text-gray-500 font-medium truncate">{s.address}</div>
+                  <button key={idx} type="button" onClick={() => handleSelectSuggestion(s)} className="w-full text-left px-5 py-4 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-3 group">
+                    <div className="mt-0.5 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                      {getSuggestionIcon(s.type)}
+                    </div>
+                    <div className="overflow-hidden">
+                      <div className="text-xs font-black text-gray-900 group-hover:text-orange-600 transition-colors truncate">{s.name}</div>
+                      <div className="text-[10px] text-gray-500 font-medium truncate">{s.address}</div>
+                    </div>
                   </button>
                 ))}
               </div>
