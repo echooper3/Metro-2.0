@@ -16,7 +16,7 @@ const CityCard: React.FC<CityCardProps> = memo(({ city, onClick }) => {
       <img 
         src={city.image} 
         alt={city.name} 
-        loading="lazy"
+        loading="eager"
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />

@@ -1,10 +1,14 @@
 
 import React from 'react';
 
+interface EventSkeletonProps {
+  isTrending?: boolean;
+}
+
 // Component for displaying a high-fidelity loading skeleton for event cards
-const EventSkeleton: React.FC = () => {
+const EventSkeleton: React.FC<EventSkeletonProps> = ({ isTrending }) => {
   return (
-    <div className="group bg-white rounded-3xl border border-gray-100 overflow-hidden animate-pulse flex flex-col h-full shadow-sm">
+    <div className={`group bg-white rounded-3xl border border-gray-100 overflow-hidden animate-pulse flex flex-col h-full shadow-sm ${isTrending ? 'ring-2 ring-orange-500/10' : ''}`}>
       {/* Image Area Placeholder */}
       <div className="relative h-52 w-full bg-gray-200">
         {/* Badge placeholders in top corners */}
@@ -12,7 +16,10 @@ const EventSkeleton: React.FC = () => {
           <div className="h-6 w-16 bg-gray-300 rounded-full" />
           <div className="h-6 w-12 bg-gray-300 rounded-lg" />
         </div>
-        <div className="absolute top-4 right-4">
+        <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+          {isTrending && (
+            <div className="h-8 w-24 bg-white/80 rounded-full border border-orange-200/50" />
+          )}
           <div className="h-6 w-20 bg-gray-300 rounded-full" />
         </div>
       </div>
@@ -20,7 +27,7 @@ const EventSkeleton: React.FC = () => {
       <div className="p-7 flex flex-col flex-grow">
         {/* Title Placeholder */}
         <div className="mb-3 space-y-2">
-          <div className="h-5 bg-gray-200 rounded-md w-11/12" />
+          <div className={`h-5 bg-gray-200 rounded-md ${isTrending ? 'w-full' : 'w-11/12'}`} />
           <div className="h-5 bg-gray-200 rounded-md w-2/3" />
         </div>
         
@@ -50,7 +57,7 @@ const EventSkeleton: React.FC = () => {
         </div>
 
         {/* Bottom Action Button Placeholder */}
-        <div className="mt-6 w-full h-14 bg-gray-200 rounded-2xl shadow-sm" />
+        <div className={`mt-6 w-full h-14 rounded-2xl shadow-sm ${isTrending ? 'bg-orange-600/20' : 'bg-gray-200'}`} />
       </div>
     </div>
   );

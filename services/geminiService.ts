@@ -71,14 +71,14 @@ export const getCachedData = (key: string) => {
 
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean, signal?: AbortSignal) {
   const { category, keyword, page = 1 } = options;
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   const modelName = "gemini-3-flash-preview";
   
   const now = new Date();
   const currentDateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   // Streamlined prompt to reduce token count and speed up generation
-  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List REAL future events.`;
+  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List at least 15 REAL future events.`;
   if (category && category !== 'All') context += ` Cat: ${category}.`;
   if (keyword) context += ` Search: ${keyword}.`;
   if (page > 1) context += ` This is page ${page} of results. Provide completely different events from typical top results.`;
@@ -89,7 +89,7 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   const config: any = {
     thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     responseMimeType: "application/json",
-    systemInstruction: "JSON ONLY. No markdown. No text outside array. Valid JSON schema. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer/host name, website, and contact info if available.",
+    systemInstruction: "JSON ARRAY ONLY. No markdown. No text outside array. Valid JSON. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer name, website, and contact info.",
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -189,7 +189,7 @@ export const searchPlaces = async (input: string) => {
   if (venueAbortController) venueAbortController.abort();
   venueAbortController = new AbortController();
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",

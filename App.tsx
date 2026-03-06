@@ -44,6 +44,7 @@ const App: React.FC = () => {
   const [hasMore, setHasMore] = useState(true);
   const loaderRef = useRef<HTMLDivElement>(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isPending, startTransition] = useTransition();
   const fetchIdRef = useRef(0);
@@ -114,14 +115,15 @@ const App: React.FC = () => {
     if (!isNextPage) {
       setIsRefreshing(true);
       setHasMore(true);
-      // Clear data only if no cache to show skeletons
-      if (!cached) setAllEvents([]);
+      // Don't clear if we already have data (like seed data), just show refresh state
+      // This ensures something is always visible even if the API fails
+      if (!cached && allEvents.length === 0) setAllEvents([]); 
     } else {
       setIsPageLoading(true);
     }
 
     try {
-      const result = await fetchEvents(cityName, { ...options, category: targetCategory, fastSync: false });
+      const result = await fetchEvents(cityName, { ...options, category: targetCategory, fastSync: !isNextPage });
       if (requestId !== fetchIdRef.current) return;
 
       if (result && result.events.length > 0) {
@@ -130,19 +132,25 @@ const App: React.FC = () => {
             const seen = new Set(allEventsRef.current.map(p => p.title.toLowerCase()));
             const newEvents = result.events.filter(n => !seen.has(n.title.toLowerCase()));
             setAllEvents(prev => [...prev, ...newEvents]);
-            if (newEvents.length === 0 || result.events.length < 5) setHasMore(false);
+            if (newEvents.length === 0 || result.events.length < 3) setHasMore(false);
           } else {
             setAllEvents(result.events);
             setSources(result.sources || []);
             setSourceStatus(result.status as any);
-            if (result.events.length < 5) setHasMore(false);
+            if (result.events.length < 3) setHasMore(false);
           }
         });
-      } else if (isNextPage) {
-        setHasMore(false);
+      } else {
+        if (isNextPage) {
+          setHasMore(false);
+        } else if (!result) {
+          addToast("Metropolitan Sync failed. Showing local data.");
+          setSourceStatus('seed');
+        }
       }
     } catch (err) {
       console.warn("Metropolitan Sync failed.");
+      addToast("Metropolitan Sync failed. Showing local data.");
     } finally {
       setIsRefreshing(false);
       setIsVerifying(false);
@@ -200,20 +208,27 @@ const App: React.FC = () => {
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
       if (entries[0].isIntersecting && hasMore && !isRefreshing && !isPageLoading && view !== AppView.LANDING) {
-        setPage(prev => {
-          const nextPage = prev + 1;
-          loadCityEvents(selectedCity?.name || 'All', { 
-            category: activeCategory, 
-            keyword: searchQuery || undefined, 
-            page: nextPage,
-            excludeTitles: allEventsRef.current.map(e => e.title)
+        if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+        
+        debounceTimeoutRef.current = setTimeout(() => {
+          setPage(prev => {
+            const nextPage = prev + 1;
+            loadCityEvents(selectedCity?.name || 'All', { 
+              category: activeCategory, 
+              keyword: searchQuery || undefined, 
+              page: nextPage,
+              excludeTitles: allEventsRef.current.map(e => e.title)
+            });
+            return nextPage;
           });
-          return nextPage;
-        });
+        }, 300); // 300ms debounce
       }
     }, { threshold: 0.1 });
     if (loaderRef.current) observer.observe(loaderRef.current);
-    return () => { if (loaderRef.current) observer.unobserve(loaderRef.current); };
+    return () => { 
+      if (loaderRef.current) observer.unobserve(loaderRef.current);
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    };
   }, [hasMore, isRefreshing, isPageLoading, view, activeCategory, searchQuery, selectedCity, loadCityEvents]);
 
   return (
@@ -247,6 +262,22 @@ const App: React.FC = () => {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
               {CITIES.map(city => <CityCard key={city.id} city={city} onClick={handleCitySelect} />)}
+            </div>
+          </section>
+
+          <section className="max-w-7xl mx-auto px-4 py-24 border-t border-gray-100">
+            <div className="mb-16 flex justify-between items-end">
+              <div>
+                <span className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] mb-2 block">Metropolitan Pulse</span>
+                <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Trending Across The Metro</h2>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+              {GLOBAL_SEED_EVENTS.slice(0, 12).map(event => (
+                <div key={event.id} className="animate-in fade-in zoom-in-95 duration-500">
+                  <EventItem event={event} showCity={true} onOpenDetails={handleOpenDetails} />
+                </div>
+              ))}
             </div>
           </section>
         </div>
@@ -303,7 +334,7 @@ const App: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-16 min-h-[500px]">
               {isRefreshing && filteredEvents.length === 0 ? (
-                Array.from({ length: 6 }).map((_, i) => <EventSkeleton key={i} />)
+                Array.from({ length: 6 }).map((_, i) => <EventSkeleton key={i} isTrending={i < 2} />)
               ) : filteredEvents.length > 0 ? (
                 filteredEvents.map(event => (
                   <div key={event.id} className="animate-in fade-in zoom-in-95 duration-500">
@@ -319,8 +350,15 @@ const App: React.FC = () => {
 
             <div ref={loaderRef} className="mt-16 py-10 flex flex-col items-center justify-center">
               {isPageLoading && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 w-full animate-in fade-in duration-500">
-                  {Array.from({ length: 3 }).map((_, i) => <EventSkeleton key={i} />)}
+                <div className="w-full animate-in fade-in duration-500">
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="h-[1px] flex-1 bg-gray-100"></div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 bg-orange-50 px-4 py-2 rounded-full">Loading more events</span>
+                    <div className="h-[1px] flex-1 bg-gray-100"></div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                    {Array.from({ length: 3 }).map((_, i) => <EventSkeleton key={i} />)}
+                  </div>
                 </div>
               )}
             </div>
