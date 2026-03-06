@@ -271,6 +271,12 @@ const App: React.FC = () => {
                 <span className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] mb-2 block">Metropolitan Pulse</span>
                 <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Trending Across The Metro</h2>
               </div>
+              <button 
+                onClick={() => handleGlobalSearch('Trending')}
+                className="hidden sm:flex items-center px-8 py-3 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-orange-600 hover:text-white transition-all uppercase tracking-widest text-[9px] border border-gray-100 shadow-sm"
+              >
+                View All Trending
+              </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
               {GLOBAL_SEED_EVENTS.slice(0, 12).map(event => (
@@ -278,6 +284,14 @@ const App: React.FC = () => {
                   <EventItem event={event} showCity={true} onOpenDetails={handleOpenDetails} />
                 </div>
               ))}
+            </div>
+            <div className="mt-16 text-center sm:hidden">
+              <button 
+                onClick={() => handleGlobalSearch('Trending')}
+                className="w-full py-4 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-orange-600 hover:text-white transition-all uppercase tracking-widest text-[9px] border border-gray-100 shadow-sm"
+              >
+                View All Trending
+              </button>
             </div>
           </section>
         </div>

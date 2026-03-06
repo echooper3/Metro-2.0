@@ -29,16 +29,27 @@ const EventItem: React.FC<EventItemProps> = memo(({ event, showCity, isSaved, on
   const formatFriendlyDate = (dateStr?: string, timeStr?: string) => {
     if (!dateStr) return null;
     try {
-      const parts = dateStr.includes('-') ? dateStr.split('-') : dateStr.split('/');
+      // Handle ISO format or YYYY-MM-DD
+      let cleanDate = dateStr;
+      if (cleanDate.includes('T')) cleanDate = cleanDate.split('T')[0];
+      
+      const parts = cleanDate.includes('-') ? cleanDate.split('-') : cleanDate.split('/');
       let m, d, y;
-      if (parts[0].length === 4) { [y, m, d] = parts.map(Number); }
-      else { [m, d, y] = parts.map(Number); }
-      const eventDate = new Date(y, m - 1, d);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const isToday = eventDate.getTime() === today.getTime();
-      const datePrefix = isToday ? 'Today' : eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      return timeStr ? `${datePrefix} @ ${timeStr}` : datePrefix;
+      
+      if (parts.length === 3) {
+        if (parts[0].length === 4) { [y, m, d] = parts.map(Number); }
+        else { [m, d, y] = parts.map(Number); }
+        
+        const eventDate = new Date(y, m - 1, d);
+        if (isNaN(eventDate.getTime())) return dateStr;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isToday = eventDate.getTime() === today.getTime();
+        const datePrefix = isToday ? 'Today' : eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        return timeStr ? `${datePrefix} @ ${timeStr}` : datePrefix;
+      }
+      return dateStr;
     } catch (e) { return dateStr; }
   };
 
