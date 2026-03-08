@@ -78,7 +78,7 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   const currentDateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   // Streamlined prompt to reduce token count and speed up generation
-  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List at least 15 REAL future events.`;
+  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List exactly 12 REAL future events.`;
   if (category && category !== 'All') context += ` Cat: ${category}.`;
   if (keyword) context += ` Search: ${keyword}.`;
   if (page > 1) context += ` This is page ${page} of results. Provide completely different events from typical top results.`;

@@ -73,16 +73,135 @@ const generateCitySeeds = (city: string): EventActivity[] => {
   return events;
 };
 
-export const SEED_EVENTS: Record<string, EventActivity[]> = {
-  tulsa: generateCitySeeds('Tulsa'),
-  okc: generateCitySeeds('Oklahoma City'),
-  dallas: generateCitySeeds('Dallas'),
-  houston: generateCitySeeds('Houston'),
+const REAL_SEED_EVENTS: Record<string, EventActivity[]> = {
+  tulsa: [
+    {
+      id: 't-1',
+      title: 'Tulsa Mayfest 2026',
+      cityName: 'Tulsa',
+      category: 'Arts & Culture',
+      description: 'The premier arts and crafts festival in downtown Tulsa. Featuring over 100 artists, live music, and local food vendors.',
+      date: '05/15/2026',
+      time: '11:00 AM',
+      venue: 'Arts District',
+      location: 'Main St & Archer, Tulsa, OK',
+      isFree: true,
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&q=80&w=800'
+    },
+    {
+      id: 't-2',
+      title: 'FC Tulsa vs San Antonio',
+      cityName: 'Tulsa',
+      category: 'Sports',
+      description: 'USL Championship soccer at ONEOK Field. Experience the electric atmosphere of the 918.',
+      date: getRelDate(2),
+      time: '7:30 PM',
+      venue: 'ONEOK Field',
+      location: '201 N Elgin Ave, Tulsa, OK',
+      price: '$15 - $45',
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&q=80&w=800'
+    }
+  ],
+  okc: [
+    {
+      id: 'okc-1',
+      title: 'OKC Thunder vs Warriors',
+      cityName: 'Oklahoma City',
+      category: 'Sports',
+      description: 'Catch the young Thunder core taking on the veteran Warriors in a high-stakes Western Conference matchup.',
+      date: getRelDate(1),
+      time: '7:00 PM',
+      venue: 'Paycom Center',
+      location: '100 W Reno Ave, Oklahoma City, OK',
+      price: '$45+',
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&q=80&w=800'
+    },
+    {
+      id: 'okc-2',
+      title: 'Riversport Whitewater Rafting',
+      cityName: 'Oklahoma City',
+      category: 'Outdoors',
+      description: 'Experience Olympic-class whitewater rafting in the heart of downtown OKC.',
+      date: getRelDate(0),
+      time: '10:00 AM',
+      venue: 'Riversport OKC',
+      location: '800 Riversport Dr, Oklahoma City, OK',
+      price: '$49',
+      isTrending: false,
+      imageUrl: 'https://images.unsplash.com/photo-1530866495547-083978a21e36?auto=format&fit=crop&q=80&w=800'
+    }
+  ],
+  dallas: [
+    {
+      id: 'd-1',
+      title: 'Dallas Mavericks Playoff Watch Party',
+      cityName: 'Dallas',
+      category: 'Sports',
+      description: 'Join thousands of MFFLs at Victory Park to cheer on Luka and the Mavs on the big screen.',
+      date: getRelDate(0),
+      time: '8:30 PM',
+      venue: 'Victory Park',
+      location: '2500 Victory Ave, Dallas, TX',
+      isFree: true,
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1519861531473-9200262188bf?auto=format&fit=crop&q=80&w=800'
+    },
+    {
+      id: 'd-2',
+      title: 'Deep Ellum Jazz Night',
+      cityName: 'Dallas',
+      category: 'Night Life',
+      description: 'A night of soulful jazz and blues in the historic Deep Ellum district.',
+      date: getRelDate(3),
+      time: '10:00 PM',
+      venue: 'The Free Man',
+      location: '2626-2630 Commerce St, Dallas, TX',
+      isFree: false,
+      price: '$10',
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1511192336575-5a79af67a629?auto=format&fit=crop&q=80&w=800'
+    }
+  ],
+  houston: [
+    {
+      id: 'h-1',
+      title: 'Houston Astros vs Rangers',
+      cityName: 'Houston',
+      category: 'Sports',
+      description: 'The Lone Star Series continues at Minute Maid Park. Go Stros!',
+      date: getRelDate(1),
+      time: '6:10 PM',
+      venue: 'Minute Maid Park',
+      location: '501 Crawford St, Houston, TX',
+      price: '$20+',
+      isTrending: true,
+      imageUrl: 'https://images.unsplash.com/photo-1508344928928-7165b67de128?auto=format&fit=crop&q=80&w=800'
+    },
+    {
+      id: 'h-2',
+      title: 'NASA Space Center Tour',
+      cityName: 'Houston',
+      category: 'Visitor Attractions',
+      description: 'Go behind the scenes of human space exploration at the official visitor center of NASA Johnson Space Center.',
+      date: getRelDate(0),
+      time: '9:00 AM',
+      venue: 'Space Center Houston',
+      location: '1601 E NASA Pkwy, Houston, TX',
+      price: '$29.95',
+      isTrending: false,
+      imageUrl: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&q=80&w=800'
+    }
+  ]
 };
 
-export const GLOBAL_SEED_EVENTS: EventActivity[] = [
-  ...SEED_EVENTS.tulsa.slice(0, 10),
-  ...SEED_EVENTS.okc.slice(0, 10),
-  ...SEED_EVENTS.dallas.slice(0, 10),
-  ...SEED_EVENTS.houston.slice(0, 10)
-].map(e => ({...e, isTrending: true}));
+export const SEED_EVENTS: Record<string, EventActivity[]> = {
+  tulsa: [],
+  okc: [],
+  dallas: [],
+  houston: [],
+};
+
+export const GLOBAL_SEED_EVENTS: EventActivity[] = [];

@@ -1,9 +1,10 @@
-
 import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { CATEGORIES, CITIES } from '../constants';
 import { EventActivity, Category } from '../types';
 import { searchPlaces } from '../services/geminiService';
 import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target } from 'lucide-react';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -60,9 +61,6 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
     searchTimeoutRef.current = window.setTimeout(async () => {
       setIsSearching(true);
       try {
-        // We use a hybrid approach: Call Nominatim for address accuracy
-        // But we could also call Gemini if we wanted venue-specific intelligence.
-        // Nominatim is better for "Place Autocomplete" as requested.
         const results = await fetchAddressSuggestions(addressInput);
         startTransition(() => {
           setSuggestions(results);
@@ -147,63 +145,69 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
 
   const getSuggestionIcon = (type: LocationSuggestion['type']) => {
     switch (type) {
-      case 'venue': return (
-        <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-        </svg>
-      );
-      case 'city': return (
-        <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2.945M8 3.935A9 9 0 1120.065 11H18a2 2 0 00-2 2v1a2 2 0 01-2 2 2 2 0 01-2-2v-2.945" />
-        </svg>
-      );
-      default: return (
-        <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      );
+      case 'venue': return <Target className="w-4 h-4 text-orange-500" />;
+      case 'city': return <MapPin className="w-4 h-4 text-black" />;
+      default: return <MapPin className="w-4 h-4 text-gray-400" />;
     }
   };
 
+  const inputClasses = "w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all placeholder:text-gray-300";
+  const labelClasses = "text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block";
+
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={onClose} />
-      <div className="relative bg-white rounded-[2rem] w-full max-w-xl p-8 md:p-10 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto scrollbar-hide">
-        <button onClick={onClose} className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-900 transition-colors z-10">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/90 backdrop-blur-md" 
+        onClick={onClose} 
+      />
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+        className="relative bg-white rounded-[3rem] w-full max-w-2xl p-10 md:p-16 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
+      >
+        <button onClick={onClose} className="absolute top-10 right-10 p-3 bg-gray-100 hover:bg-black hover:text-white rounded-2xl transition-all z-10">
+          <X className="w-6 h-6" />
         </button>
         
-        <header className="mb-8">
-          <span className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] mb-2 block">Community Portal</span>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tighter">Post an Event</h2>
+        <header className="mb-12">
+          <div className="inline-flex items-center space-x-2 px-4 py-2 bg-orange-50 rounded-full mb-4">
+            <Sparkles className="w-3 h-3 text-orange-600" />
+            <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Community Portal</span>
+          </div>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Post an Event</h2>
         </header>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-8">
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Cover Image</label>
+            <label className={labelClasses}>Cover Image</label>
             <div 
               onClick={() => !imagePreview && !isCompressing && fileInputRef.current?.click()}
-              className={`relative h-44 w-full rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${imagePreview ? 'border-transparent' : 'border-gray-200 hover:border-orange-500 hover:bg-orange-50/30'}`}
+              className={`relative h-60 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${imagePreview ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
             >
               {isCompressing ? (
                 <div className="text-center">
-                  <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Optimizing...</p>
+                  <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Optimizing Metropolitan Signal...</p>
                 </div>
               ) : imagePreview ? (
                 <>
                   <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setImagePreview(null); }} className="absolute top-3 right-3 p-2 bg-black/50 text-white rounded-full hover:bg-red-600 transition-colors backdrop-blur-sm">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-all" />
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setImagePreview(null); }} className="absolute top-4 right-4 p-3 bg-white/20 backdrop-blur-md text-white rounded-2xl hover:bg-red-600 transition-all">
+                    <X className="w-5 h-5" />
                   </button>
                 </>
               ) : (
-                <div className="text-center p-6">
-                  <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" /></svg>
+                <div className="text-center p-8">
+                  <div className="w-16 h-16 bg-gray-100 text-black rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 rotate-3 group-hover:rotate-0 transition-transform">
+                    <ImageIcon className="w-8 h-8" />
                   </div>
-                  <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Add Event Photo</p>
+                  <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Add High-Res Event Photo</p>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2">JPG, PNG up to 10MB</p>
                 </div>
               )}
               <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
@@ -211,81 +215,126 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
           </div>
 
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Event Title</label>
-            <input required type="text" className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Give your event a name" />
+            <label className={labelClasses}>Event Title</label>
+            <input required type="text" className={inputClasses} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Give your event a bold name" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Category</label>
-              <select className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all cursor-pointer" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})}>
+              <label className={labelClasses}>Category</label>
+              <select className={inputClasses} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})}>
                 {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">City</label>
-              <select className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all cursor-pointer" value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})}>
+              <label className={labelClasses}>City Hub</label>
+              <select className={inputClasses} value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})}>
                 {CITIES.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               </select>
             </div>
           </div>
 
           <div className="space-y-2 relative">
-            <div className="flex items-center justify-between ml-1 mb-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Address Autocomplete</label>
-              <button 
+            <div className="flex items-center justify-between ml-1 mb-2">
+              <label className={labelClasses}>Venue & Address</label>
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 type="button" 
                 onClick={handleUseCurrentLocation}
                 disabled={isLocating}
-                className="text-[9px] font-black uppercase tracking-[0.15em] text-orange-600 hover:text-orange-700 flex items-center transition-colors disabled:opacity-50"
+                className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-600 hover:text-orange-700 flex items-center transition-colors disabled:opacity-50"
               >
                 {isLocating ? (
-                  <span className="flex items-center"><div className="w-2 h-2 border border-orange-600 border-t-transparent rounded-full animate-spin mr-1.5"></div> Locating...</span>
+                  <span className="flex items-center"><div className="w-2 h-2 border border-orange-600 border-t-transparent rounded-full animate-spin mr-2"></div> Locating...</span>
                 ) : (
                   <>
-                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    Use Current
+                    <Target className="w-3 h-3 mr-2" />
+                    Use Current Position
                   </>
                 )}
-              </button>
+              </motion.button>
             </div>
             <div className="relative">
-              <input required type="text" placeholder="Start typing address or venue..." className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-5 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all pr-12" value={addressInput} onChange={e => setAddressInput(e.target.value)} onFocus={() => setShowSuggestions(suggestions.length > 0)} />
-              {isSearching && <div className="absolute right-4 top-1/2 -translate-y-1/2"><div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>}
-            </div>
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in slide-in-from-top-2 duration-200">
-                {suggestions.map((s, idx) => (
-                  <button key={idx} type="button" onClick={() => handleSelectSuggestion(s)} className="w-full text-left px-5 py-4 hover:bg-orange-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-3 group">
-                    <div className="mt-0.5 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-                      {getSuggestionIcon(s.type)}
-                    </div>
-                    <div className="overflow-hidden">
-                      <div className="text-xs font-black text-gray-900 group-hover:text-orange-600 transition-colors truncate">{s.name}</div>
-                      <div className="text-[10px] text-gray-500 font-medium truncate">{s.address}</div>
-                    </div>
-                  </button>
-                ))}
+              <input required type="text" placeholder="Start typing address or venue..." className={`${inputClasses} pr-14`} value={addressInput} onChange={e => setAddressInput(e.target.value)} onFocus={() => setShowSuggestions(suggestions.length > 0)} />
+              <div className="absolute right-5 top-1/2 -translate-y-1/2">
+                {isSearching ? (
+                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <MapPin className="w-5 h-5 text-gray-300" />
+                )}
               </div>
+            </div>
+            
+            <AnimatePresence>
+              {showSuggestions && suggestions.length > 0 && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute z-50 top-full left-0 right-0 mt-3 bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden"
+                >
+                  {suggestions.map((s, idx) => (
+                    <button key={idx} type="button" onClick={() => handleSelectSuggestion(s)} className="w-full text-left px-6 py-5 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 flex items-start gap-4 group">
+                      <div className="mt-1 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+                        {getSuggestionIcon(s.type)}
+                      </div>
+                      <div className="overflow-hidden">
+                        <div className="text-xs font-black text-gray-900 group-hover:text-orange-600 transition-colors truncate uppercase tracking-tight">{s.name}</div>
+                        <div className="text-[10px] text-gray-400 font-bold truncate uppercase tracking-widest mt-1">{s.address}</div>
+                      </div>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className={labelClasses}>Date</label>
+              <div className="relative">
+                <input required type="date" className={inputClasses} value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
+                <Calendar className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className={labelClasses}>Time</label>
+              <div className="relative">
+                <input type="time" className={inputClasses} value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
+                <Clock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className={labelClasses}>Description</label>
+            <textarea 
+              className={`${inputClasses} h-32 resize-none py-6`} 
+              value={formData.description} 
+              onChange={e => setFormData({...formData, description: e.target.value})} 
+              placeholder="Tell the metro what to expect..."
+            />
+          </div>
+
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            type="submit" 
+            disabled={isSubmitting || isCompressing} 
+            className="w-full py-6 bg-black text-white font-black rounded-[2rem] hover:bg-orange-600 transition-all shadow-2xl shadow-black/10 uppercase tracking-widest text-[11px] mt-8 active:scale-95 disabled:opacity-50 flex items-center justify-center"
+          >
+            {isSubmitting ? (
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                Broadcast Event
+                <Zap className="w-4 h-4 ml-3" />
+              </>
             )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Date</label>
-              <input required type="date" className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1">Time</label>
-              <input type="time" className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-3.5 px-4 text-sm font-bold focus:bg-white focus:border-orange-500 outline-none transition-all" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
-            </div>
-          </div>
-
-          <button type="submit" disabled={isSubmitting || isCompressing} className="w-full py-5 bg-orange-600 text-white font-black rounded-2xl hover:bg-orange-700 transition-all shadow-xl shadow-orange-900/20 uppercase tracking-widest text-xs mt-4 active:scale-95 disabled:opacity-50">
-            {isSubmitting ? 'Finalizing...' : 'Upload Event'}
-          </button>
+          </motion.button>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 };

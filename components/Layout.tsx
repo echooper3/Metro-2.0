@@ -1,6 +1,7 @@
-
 import React, { useState } from 'react';
 import { WeatherData } from '../types';
+import { Search, Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,32 +16,37 @@ interface LayoutProps {
 const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
   const getIcon = (condition: string) => {
     const c = condition.toLowerCase();
-    if (c.includes('sun') || c.includes('clear')) return '☀️';
-    if (c.includes('cloud')) return '☁️';
-    if (c.includes('rain')) return '🌧️';
-    if (c.includes('storm')) return '⛈️';
-    if (c.includes('snow')) return '❄️';
-    return '⛅';
+    if (c.includes('sun') || c.includes('clear')) return <Sun className="w-4 h-4 text-orange-500" />;
+    if (c.includes('cloud')) return <Cloud className="w-4 h-4 text-gray-400" />;
+    if (c.includes('rain')) return <CloudRain className="w-4 h-4 text-blue-400" />;
+    if (c.includes('storm')) return <CloudLightning className="w-4 h-4 text-yellow-500" />;
+    if (c.includes('snow')) return <Snowflake className="w-4 h-4 text-blue-200" />;
+    return <Cloud className="w-4 h-4 text-gray-400" />;
   };
 
   return (
-    <div className="hidden md:flex items-center space-x-3 px-4 py-1.5 bg-gray-50 border border-gray-100 rounded-2xl animate-in fade-in zoom-in duration-500">
-      <div className="text-xl leading-none">{getIcon(weather.condition)}</div>
+    <motion.div 
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className="hidden lg:flex items-center space-x-4 px-6 py-2 bg-gray-50 border border-gray-100 rounded-2xl"
+    >
+      <div className="flex items-center justify-center bg-white p-2 rounded-xl shadow-sm">{getIcon(weather.condition)}</div>
       <div className="flex flex-col">
-        <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 leading-none mb-0.5">
+        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 leading-none mb-1">
           {weather.cityName}
         </span>
-        <div className="flex items-center space-x-1.5">
-          <span className="text-xs font-black text-gray-900">{Math.round(weather.temp)}°{weather.unit}</span>
-          <span className="text-[10px] font-bold text-gray-400 truncate max-w-[60px]">{weather.condition}</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm font-black text-gray-900">{Math.round(weather.temp)}°{weather.unit}</span>
+          <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{weather.condition}</span>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
 const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onPostEvent, isLoggedIn, weather }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,85 +57,171 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onP
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          <div 
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-2xl border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 h-24 flex items-center justify-between gap-8">
+          <motion.div 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => { setSearchQuery(''); onHome(); }}
-            className="flex items-center space-x-2 cursor-pointer group shrink-0"
+            className="flex items-center space-x-4 cursor-pointer group shrink-0"
           >
-            <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center transform group-hover:rotate-12 transition-transform">
-              <span className="text-white font-bold text-xl">M</span>
+            <div className="w-12 h-12 bg-black rounded-[1.25rem] flex items-center justify-center transform group-hover:rotate-6 transition-transform shadow-xl shadow-black/10">
+              <span className="text-white font-black text-2xl italic">M</span>
             </div>
-            <h1 className="hidden lg:block text-xl font-black tracking-tight text-gray-900">
-              Inside <span className="text-orange-600">The Metro</span>
-            </h1>
-          </div>
+            <div className="flex flex-col leading-none">
+              <h1 className="text-2xl font-black tracking-tighter text-gray-900 uppercase italic">
+                Inside <span className="text-orange-600">The Metro</span>
+              </h1>
+              <span className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-400">Regional Intelligence</span>
+            </div>
+          </motion.div>
 
-          <form onSubmit={handleSearchSubmit} className="flex-grow max-w-md relative group">
+          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-grow max-w-2xl relative group">
             <input 
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Find events..."
-              className="w-full bg-gray-100 border-2 border-transparent rounded-full py-2 px-10 text-sm focus:ring-0 focus:border-orange-500 focus:bg-white transition-all outline-none"
+              placeholder="Search metropolitan signals..."
+              className="w-full bg-gray-50 border-2 border-transparent rounded-[1.5rem] py-4 px-14 text-sm focus:ring-0 focus:border-black focus:bg-white transition-all outline-none font-bold placeholder:text-gray-300"
             />
-            <svg className="absolute left-3.5 top-2.5 w-4 h-4 text-gray-400 group-focus-within:text-orange-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300 group-focus-within:text-black transition-colors" />
+            <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center space-x-2">
+               <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest border border-gray-200 px-2 py-1 rounded-md">CMD + K</span>
+            </div>
           </form>
 
-          <div className="flex items-center space-x-2 sm:space-x-4 shrink-0">
+          <div className="flex items-center space-x-4 shrink-0">
             {weather && <WeatherWidget weather={weather} />}
             
+            <div className="hidden md:flex items-center space-x-4">
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onPostEvent}
+                className="flex items-center px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-gray-900 bg-white border-2 border-gray-100 rounded-2xl hover:border-black transition-all"
+              >
+                <Plus className="w-4 h-4 mr-2 stroke-[3px]" />
+                Post Signal
+              </motion.button>
+              <motion.button 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={onAuth}
+                className="px-8 py-3.5 text-[10px] font-black uppercase tracking-widest text-white bg-black rounded-2xl hover:bg-orange-600 shadow-2xl shadow-black/10 transition-all"
+              >
+                Join Metro
+              </motion.button>
+            </div>
+
             <button 
-              onClick={onPostEvent}
-              className="hidden sm:flex items-center px-4 py-2 text-xs font-black uppercase tracking-widest text-orange-600 hover:bg-orange-50 rounded-full transition-all"
+              className="md:hidden p-3 bg-gray-50 rounded-2xl text-gray-900"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M12 4v16m8-8H4" />
-              </svg>
-              Post
-            </button>
-            <button 
-              onClick={onAuth}
-              className="px-5 py-2 text-sm font-bold text-white bg-orange-600 rounded-full hover:bg-orange-700 shadow-md shadow-orange-200 transition-all"
-            >
-              Join
+              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
           </div>
         </div>
+
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
+            >
+              <div className="p-6 space-y-6">
+                <form onSubmit={handleSearchSubmit} className="relative">
+                  <input 
+                    type="text" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search signals..."
+                    className="w-full bg-gray-50 rounded-2xl py-4 px-12 text-sm font-bold outline-none"
+                  />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                </form>
+                <div className="grid grid-cols-2 gap-4">
+                  <button onClick={onPostEvent} className="py-4 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest">Post Signal</button>
+                  <button onClick={onAuth} className="py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">Join Metro</button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
       
       <main className="flex-grow">
         {children}
       </main>
 
-      <footer className="bg-gray-950 text-gray-400 py-16 border-t border-gray-900">
+      <footer className="bg-black text-white py-32">
         <div className="max-w-7xl mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-12">
-            <div className="col-span-1 md:col-span-2">
-              <div className="flex items-center space-x-2 mb-6">
-                <div className="w-6 h-6 bg-orange-600 rounded flex items-center justify-center">
-                  <span className="text-white font-bold text-xs">M</span>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-16">
+            <div className="md:col-span-6">
+              <div className="flex items-center space-x-4 mb-10">
+                <div className="w-12 h-12 bg-white rounded-[1.25rem] flex items-center justify-center rotate-6">
+                  <span className="text-black font-black text-2xl italic">M</span>
                 </div>
-                <h2 className="text-white font-black text-xl tracking-tight">Inside <span className="text-orange-600">The Metro</span></h2>
+                <h2 className="text-white font-black text-4xl tracking-tighter uppercase italic">Inside <span className="text-orange-600">The Metro</span></h2>
               </div>
-              <p className="max-w-md leading-relaxed text-sm">
-                Discover the heartbeat of your city. Sourcing professional sports, underground music, local arts, and family festivals across Oklahoma and Texas.
+              <p className="max-w-md leading-relaxed text-white/50 font-medium text-lg mb-12">
+                The definitive guide to the metropolitan heartbeat. Sourcing professional sports, underground culture, and local legends across the South-Central region.
               </p>
+              <div className="flex items-center space-x-6">
+                 <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-white/30 mb-2">Network Status</span>
+                    <div className="flex items-center space-x-2">
+                       <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                       <span className="text-xs font-black uppercase tracking-widest">All Hubs Online</span>
+                    </div>
+                 </div>
+              </div>
             </div>
-            <div>
-              <h3 className="text-white font-bold mb-6 uppercase tracking-widest text-[10px]">Metro Hubs</h3>
-              <ul className="space-y-3 text-xs font-bold uppercase tracking-wider">
-                <li className="hover:text-orange-500 cursor-pointer transition-colors">Tulsa, OK</li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors">Oklahoma City, OK</li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors">Dallas, TX</li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors">Houston, TX</li>
+            
+            <div className="md:col-span-3">
+              <h3 className="text-white font-black mb-10 uppercase tracking-[0.4em] text-[10px]">Active Hubs</h3>
+              <ul className="space-y-6 text-[11px] font-black uppercase tracking-[0.2em] text-white/40">
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Tulsa, OK
+                </li>
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Oklahoma City, OK
+                </li>
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Dallas, TX
+                </li>
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Houston, TX
+                </li>
+              </ul>
+            </div>
+
+            <div className="md:col-span-3">
+              <h3 className="text-white font-black mb-10 uppercase tracking-[0.4em] text-[10px]">Intelligence</h3>
+              <ul className="space-y-6 text-[11px] font-black uppercase tracking-[0.2em] text-white/40">
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                   <Zap className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Live Signals
+                </li>
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                   <Globe className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Regional Map
+                </li>
+                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                   <User className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Member Portal
+                </li>
               </ul>
             </div>
           </div>
-          <div className="border-t border-gray-900 mt-16 pt-8 text-center text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">
-            © {new Date().getFullYear()} Inside The Metro. Powered by GenAI.
+          
+          <div className="mt-32 pt-12 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-8">
+            <div className="text-[10px] font-black uppercase tracking-[0.4em] text-white/20">
+              © {new Date().getFullYear()} The Metro Intelligence Network.
+            </div>
+            <div className="flex space-x-12 text-[10px] font-black uppercase tracking-[0.2em] text-white/20">
+              <span className="hover:text-white cursor-pointer transition-colors">Privacy Protocol</span>
+              <span className="hover:text-white cursor-pointer transition-colors">Terms of Service</span>
+              <span className="hover:text-white cursor-pointer transition-colors">API Access</span>
+            </div>
           </div>
         </div>
       </footer>

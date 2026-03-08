@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo, useRef, useTransition, Suspense, lazy } from 'react';
 import Layout from './components/Layout';
 import CityCard from './components/CityCard';
@@ -8,6 +7,8 @@ import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants
 import { City, AppView, EventActivity, Category, GroundingSource, WeatherData } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
 import { fetchCityWeather } from './services/weatherService';
+import { motion, AnimatePresence } from 'motion/react';
+import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign } from 'lucide-react';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
@@ -58,17 +59,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Load initial global data and weather (Dallas as default for weather)
-  useEffect(() => {
-    const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });
-    const cached = getCachedData(cacheKey);
-    if (cached) {
-      setAllEvents(cached.events);
-      setSourceStatus('cache');
-    }
-    updateWeather('Dallas'); // Default region weather
-  }, [updateWeather]);
-
   useEffect(() => {
     if (isRefreshing || isVerifying || isPageLoading) {
       const interval = setInterval(() => {
@@ -115,8 +105,6 @@ const App: React.FC = () => {
     if (!isNextPage) {
       setIsRefreshing(true);
       setHasMore(true);
-      // Don't clear if we already have data (like seed data), just show refresh state
-      // This ensures something is always visible even if the API fails
       if (!cached && allEvents.length === 0) setAllEvents([]); 
     } else {
       setIsPageLoading(true);
@@ -132,12 +120,12 @@ const App: React.FC = () => {
             const seen = new Set(allEventsRef.current.map(p => p.title.toLowerCase()));
             const newEvents = result.events.filter(n => !seen.has(n.title.toLowerCase()));
             setAllEvents(prev => [...prev, ...newEvents]);
-            if (newEvents.length === 0 || result.events.length < 3) setHasMore(false);
+            if (newEvents.length === 0 || result.events.length < 12) setHasMore(false);
           } else {
             setAllEvents(result.events);
             setSources(result.sources || []);
             setSourceStatus(result.status as any);
-            if (result.events.length < 3) setHasMore(false);
+            if (result.events.length < 12) setHasMore(false);
           }
         });
       } else {
@@ -158,15 +146,26 @@ const App: React.FC = () => {
     }
   }, [activeCategory]);
 
+  useEffect(() => {
+    const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });
+    const cached = getCachedData(cacheKey);
+    if (cached) {
+      setAllEvents(cached.events);
+      setSourceStatus('cache');
+    } else {
+      loadCityEvents('All', { category: 'All', page: 1 });
+    }
+    updateWeather('Dallas');
+  }, [updateWeather, loadCityEvents]);
+
   const handleCitySelect = useCallback((city: City) => {
-    const citySeeds = SEED_EVENTS[city.id] || [];
     startTransition(() => {
       setSelectedCity(city);
       setView(AppView.CITY_DETAIL);
       setActiveCategory('All');
       setSearchQuery('');
       setPage(1);
-      setAllEvents(citySeeds);
+      setAllEvents([]);
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
@@ -196,40 +195,30 @@ const App: React.FC = () => {
   const handleHome = useCallback(() => {
     setView(AppView.LANDING);
     setSelectedCity(null);
-    setAllEvents(GLOBAL_SEED_EVENTS);
+    setAllEvents([]);
     setPage(1);
     setActiveCategory('All');
     setSearchQuery('');
     setSourceStatus('seed');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     updateWeather('Dallas');
-  }, [updateWeather]);
+    loadCityEvents('All', { category: 'All', page: 1 });
+  }, [updateWeather, loadCityEvents]);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && hasMore && !isRefreshing && !isPageLoading && view !== AppView.LANDING) {
-        if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-        
-        debounceTimeoutRef.current = setTimeout(() => {
-          setPage(prev => {
-            const nextPage = prev + 1;
-            loadCityEvents(selectedCity?.name || 'All', { 
-              category: activeCategory, 
-              keyword: searchQuery || undefined, 
-              page: nextPage,
-              excludeTitles: allEventsRef.current.map(e => e.title)
-            });
-            return nextPage;
-          });
-        }, 300); // 300ms debounce
-      }
-    }, { threshold: 0.1 });
-    if (loaderRef.current) observer.observe(loaderRef.current);
-    return () => { 
-      if (loaderRef.current) observer.unobserve(loaderRef.current);
-      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    };
-  }, [hasMore, isRefreshing, isPageLoading, view, activeCategory, searchQuery, selectedCity, loadCityEvents]);
+  const handleLoadMore = useCallback(() => {
+    if (!hasMore || isRefreshing || isPageLoading) return;
+    
+    setPage(prev => {
+      const nextPage = prev + 1;
+      loadCityEvents(selectedCity?.name || 'All', { 
+        category: activeCategory, 
+        keyword: searchQuery || undefined, 
+        page: nextPage,
+        excludeTitles: allEventsRef.current.map(e => e.title)
+      });
+      return nextPage;
+    });
+  }, [hasMore, isRefreshing, isPageLoading, selectedCity, activeCategory, searchQuery, loadCityEvents]);
 
   return (
     <Layout 
@@ -240,58 +229,142 @@ const App: React.FC = () => {
       weather={weather}
     >
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-2 pointer-events-none">
-        {toasts.map(t => (<div key={t.id} className="bg-gray-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl animate-in slide-in-from-bottom-4">{t.message}</div>))}
+        <AnimatePresence>
+          {toasts.map(t => (
+            <motion.div 
+              key={t.id} 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="bg-black text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl flex items-center"
+            >
+              <Sparkles className="w-4 h-4 mr-3 text-orange-500" />
+              {t.message}
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
 
       {view === AppView.LANDING && (
         <div className="animate-in fade-in duration-700">
-          <section className="relative h-[600px] flex items-center justify-center overflow-hidden bg-gray-950">
-            <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1200" className="absolute inset-0 w-full h-full object-cover opacity-30 grayscale" alt="City" loading="eager" />
-            <div className="relative z-10 text-center max-w-4xl px-4">
-              <span className="text-orange-500 font-black tracking-[0.5em] uppercase mb-8 block text-[10px] animate-pulse">Live Metros Sourcing Now</span>
-              <h2 className="text-6xl md:text-8xl font-black text-white mb-10 leading-[0.9] tracking-tighter">Inside <br/><span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400">The Metro</span></h2>
-              <p className="text-gray-400 font-medium text-lg mb-12 max-w-xl mx-auto">Discover professional sports, underground culture, and local arts in Tulsa, OKC, Dallas, and Houston.</p>
-              <a href="#hub-selector" className="inline-flex items-center px-12 py-5 bg-orange-600 text-white font-black rounded-3xl hover:bg-orange-700 transition-all shadow-2xl shadow-orange-900/40 uppercase tracking-widest text-[10px] active:scale-95">Choose Your Hub</a>
-            </div>
-          </section>
-
-          <section id="hub-selector" className="max-w-7xl mx-auto px-4 py-24">
-            <div className="mb-16">
-              <span className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] mb-2 block">Metropolitan Selection</span>
-              <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Access Local Intelligence</h2>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
-              {CITIES.map(city => <CityCard key={city.id} city={city} onClick={handleCitySelect} />)}
-            </div>
-          </section>
-
-          <section className="max-w-7xl mx-auto px-4 py-24 border-t border-gray-100">
-            <div className="mb-16 flex justify-between items-end">
-              <div>
-                <span className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] mb-2 block">Metropolitan Pulse</span>
-                <h2 className="text-4xl font-black text-gray-900 tracking-tighter">Trending Across The Metro</h2>
-              </div>
-              <button 
-                onClick={() => handleGlobalSearch('Trending')}
-                className="hidden sm:flex items-center px-8 py-3 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-orange-600 hover:text-white transition-all uppercase tracking-widest text-[9px] border border-gray-100 shadow-sm"
+          <section className="relative h-[85vh] flex items-center justify-center overflow-hidden bg-white">
+            <div className="absolute inset-0 hero-gradient" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-7xl px-4 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center z-10">
+              <motion.div 
+                initial={{ opacity: 0, x: -50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.8 }}
               >
-                View All Trending
-              </button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-              {GLOBAL_SEED_EVENTS.slice(0, 12).map(event => (
-                <div key={event.id} className="animate-in fade-in zoom-in-95 duration-500">
-                  <EventItem event={event} showCity={true} onOpenDetails={handleOpenDetails} />
+                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-orange-50 rounded-full mb-8">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-orange-600">Live Metropolitan Signals Active</span>
                 </div>
+                <h2 className="text-7xl md:text-9xl font-black text-gray-900 mb-8 leading-[0.85] tracking-tighter uppercase italic">
+                  Inside <br/><span className="text-orange-600">The Metro</span>
+                </h2>
+                <p className="text-gray-500 font-medium text-xl mb-12 max-w-lg leading-relaxed text-balance">
+                  Your definitive guide to professional sports, underground culture, and local legends in Tulsa, OKC, Dallas, and Houston.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <motion.a 
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    href="#hub-selector" 
+                    className="inline-flex items-center px-10 py-5 bg-black text-white font-black rounded-2xl shadow-2xl shadow-black/20 uppercase tracking-widest text-[10px]"
+                  >
+                    Choose Your Hub
+                    <ArrowRight className="w-4 h-4 ml-3" />
+                  </motion.a>
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleGlobalSearch('Trending')}
+                    className="inline-flex items-center px-10 py-5 bg-white border-2 border-gray-100 text-gray-900 font-black rounded-2xl hover:border-black transition-all uppercase tracking-widest text-[10px]"
+                  >
+                    View Trending
+                  </motion.button>
+                </div>
+              </motion.div>
+              
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 1, delay: 0.2 }}
+                className="hidden lg:block relative"
+              >
+                <div className="relative aspect-square rounded-[4rem] overflow-hidden shadow-2xl rotate-3">
+                  <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1200" className="w-full h-full object-cover" alt="City" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                  <div className="absolute bottom-12 left-12 right-12">
+                     <div className="flex items-center space-x-3 mb-4">
+                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center">
+                           <Globe className="w-6 h-6 text-black" />
+                        </div>
+                        <div className="flex flex-col">
+                           <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Current Focus</span>
+                           <span className="text-white font-black text-xl tracking-tight">South-Central Region</span>
+                        </div>
+                     </div>
+                  </div>
+                </div>
+                <div className="absolute -top-12 -right-12 w-64 h-64 bg-orange-600 rounded-[3rem] -z-10 rotate-12 opacity-20 blur-3xl" />
+              </motion.div>
+            </div>
+          </section>
+
+          <section id="hub-selector" className="max-w-7xl mx-auto px-4 py-32">
+            <div className="mb-20 text-center">
+              <span className="text-orange-600 font-black uppercase tracking-[0.4em] text-[10px] mb-4 block">Metropolitan Selection</span>
+              <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic">Access Local Intelligence</h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {CITIES.map((city, i) => (
+                <motion.div
+                  key={city.id}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                >
+                  <CityCard city={city} onClick={handleCitySelect} />
+                </motion.div>
               ))}
             </div>
-            <div className="mt-16 text-center sm:hidden">
-              <button 
-                onClick={() => handleGlobalSearch('Trending')}
-                className="w-full py-4 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-orange-600 hover:text-white transition-all uppercase tracking-widest text-[9px] border border-gray-100 shadow-sm"
-              >
-                View All Trending
-              </button>
+          </section>
+
+          <section className="bg-white py-32 border-y border-gray-100">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="mb-20 flex flex-col md:flex-row justify-between items-end gap-8">
+                <div>
+                  <span className="text-orange-600 font-black uppercase tracking-[0.4em] text-[10px] mb-4 block">Metropolitan Pulse</span>
+                  <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic">Trending Now</h2>
+                </div>
+                <motion.button 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => handleGlobalSearch('Trending')}
+                  className="flex items-center px-10 py-4 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-black hover:text-white transition-all uppercase tracking-widest text-[10px] border border-gray-100 shadow-sm"
+                >
+                  View All Trending
+                  <ArrowRight className="w-4 h-4 ml-3" />
+                </motion.button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                {GLOBAL_SEED_EVENTS.slice(0, 12).map((event, i) => (
+                  <motion.div 
+                    key={event.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    whileInView={{ opacity: 1, scale: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
+                  >
+                    <EventItem event={event} showCity={true} onOpenDetails={handleOpenDetails} />
+                  </motion.div>
+                ))}
+              </div>
             </div>
           </section>
         </div>
@@ -299,75 +372,109 @@ const App: React.FC = () => {
 
       {(view === AppView.CITY_DETAIL || view === AppView.SEARCH_RESULTS) && (
         <div className="pb-32">
-          <div className="bg-gray-950 pt-28 pb-20 text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[150px] -translate-y-1/2 translate-x-1/2"></div>
+          <div className="bg-white pt-32 pb-24 border-b border-gray-100 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-orange-600/5 rounded-full blur-[150px] -translate-y-1/2 translate-x-1/2"></div>
             <div className="max-w-7xl mx-auto px-4 relative z-10">
-              <button onClick={handleHome} className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 mb-10 flex items-center gap-3 group">
-                <span className="group-hover:-translate-x-1 transition-transform">←</span> Hub Selection
-              </button>
-              <h2 className="text-5xl md:text-7xl font-black mb-8 tracking-tighter line-clamp-2">
-                {view === AppView.SEARCH_RESULTS ? `Search: ${searchQuery}` : selectedCity?.name}
-              </h2>
+              <motion.button 
+                whileHover={{ x: -5 }}
+                onClick={handleHome} 
+                className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 mb-12 flex items-center gap-3 group"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" /> Hub Selection
+              </motion.button>
               
-              <div className="flex flex-wrap items-center gap-6 mt-10">
-                <div className={`flex items-center gap-5 px-7 py-3.5 rounded-2xl border transition-all duration-700 ${isRefreshing ? 'bg-orange-600/10 border-orange-500/30' : 'bg-white/5 border-white/10'}`}>
-                  {isRefreshing ? (
-                    <>
-                      <div className="flex space-x-1">
-                        <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-bounce"></div>
-                      </div>
-                      <span className="text-orange-400 font-black text-[10px] uppercase tracking-[0.2em]">{SEARCH_MESSAGES[loadingMsgIdx]}</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' ? 'bg-emerald-500' : 'bg-orange-500'}`} />
-                      <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' ? 'text-emerald-400' : 'text-orange-400'}`}>
-                        {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
-                      </span>
-                    </>
-                  )}
+              <div className="flex flex-col md:flex-row md:items-end justify-between gap-12">
+                <div className="max-w-3xl">
+                  <h2 className="text-6xl md:text-8xl font-black mb-8 tracking-tighter uppercase italic leading-[0.85] text-gray-900">
+                    {view === AppView.SEARCH_RESULTS ? `Search: ${searchQuery}` : selectedCity?.name}
+                  </h2>
+                  <p className="text-gray-500 font-medium text-xl leading-relaxed">
+                    {view === AppView.SEARCH_RESULTS 
+                      ? `Metropolitan intelligence results for "${searchQuery}" across all active hubs.` 
+                      : selectedCity?.description}
+                  </p>
+                </div>
+                
+                <div className="flex flex-col items-end gap-4">
+                  <div className={`flex items-center gap-6 px-8 py-4 rounded-3xl border transition-all duration-700 ${isRefreshing ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
+                    {isRefreshing ? (
+                      <>
+                        <Zap className="w-5 h-5 text-orange-500 animate-pulse" />
+                        <span className="text-orange-600 font-black text-[10px] uppercase tracking-[0.2em]">{SEARCH_MESSAGES[loadingMsgIdx]}</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
+                        <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                          {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-4 -mt-8 relative z-20">
-            <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white p-3 rounded-[2rem] shadow-2xl shadow-gray-200 border border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-20">
+            <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white p-4 rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
               {CATEGORIES.map(cat => (
                 <button 
                   key={cat} 
                   onClick={() => handleCategoryClick(cat)} 
-                  className={`px-7 py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 group ${activeCategory === cat ? 'bg-orange-600 text-white shadow-xl shadow-orange-200' : 'bg-gray-50 text-gray-500 hover:bg-orange-50 hover:text-orange-600'}`}
+                  className={`px-8 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-black text-white shadow-2xl shadow-black/20' : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-black'}`}
                 >
                   {cat}
                 </button>
               ))}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-16 min-h-[500px]">
-              {isRefreshing && filteredEvents.length === 0 ? (
-                Array.from({ length: 6 }).map((_, i) => <EventSkeleton key={i} isTrending={i < 2} />)
-              ) : filteredEvents.length > 0 ? (
-                filteredEvents.map(event => (
-                  <div key={event.id} className="animate-in fade-in zoom-in-95 duration-500">
-                    <EventItem event={event} showCity={view === AppView.SEARCH_RESULTS} onOpenDetails={handleOpenDetails} />
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full py-32 text-center">
-                  <p className="text-gray-400 font-black uppercase tracking-widest text-[10px]">No metropolitan data found for this selection</p>
-                </div>
-              )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-20 min-h-[500px]">
+              <AnimatePresence mode="popLayout">
+                {isRefreshing && filteredEvents.length === 0 ? (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <motion.div 
+                      key={`skeleton-${i}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      <EventSkeleton isTrending={i < 2} />
+                    </motion.div>
+                  ))
+                ) : filteredEvents.length > 0 ? (
+                  filteredEvents.map((event, i) => (
+                    <motion.div 
+                      key={event.id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.05 }}
+                    >
+                      <EventItem event={event} showCity={view === AppView.SEARCH_RESULTS} onOpenDetails={handleOpenDetails} />
+                    </motion.div>
+                  ))
+                ) : (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="col-span-full py-40 text-center"
+                  >
+                    <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-8">
+                       <Search className="w-8 h-8 text-gray-300" />
+                    </div>
+                    <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px]">No metropolitan data found for this selection</p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
-            <div ref={loaderRef} className="mt-16 py-10 flex flex-col items-center justify-center">
+            <div className="mt-20 flex flex-col items-center justify-center">
               {isPageLoading && (
-                <div className="w-full animate-in fade-in duration-500">
-                  <div className="flex items-center gap-4 mb-8">
+                <div className="w-full mb-12">
+                  <div className="flex items-center gap-8 mb-12">
                     <div className="h-[1px] flex-1 bg-gray-100"></div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500 bg-orange-50 px-4 py-2 rounded-full">Loading more events</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500">Sourcing more data</span>
                     <div className="h-[1px] flex-1 bg-gray-100"></div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
@@ -375,75 +482,128 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              <motion.button
+                whileHover={hasMore && !isPageLoading ? { scale: 1.05 } : {}}
+                whileTap={hasMore && !isPageLoading ? { scale: 0.95 } : {}}
+                onClick={handleLoadMore}
+                disabled={!hasMore || isPageLoading}
+                className={`px-12 py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  !hasMore 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
+                    : 'bg-black text-white hover:bg-orange-600 shadow-xl'
+                }`}
+              >
+                {isPageLoading ? 'Synchronizing...' : hasMore ? 'Load More Signals' : 'All Signals Synchronized'}
+              </motion.button>
             </div>
           </div>
         </div>
       )}
 
       {showCreateModal && (
-        <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <CreateEventModal onClose={() => setShowCreateModal(false)} onSave={ev => { addToast("Event published successfully."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} />
         </Suspense>
       )}
 
       {showAuthModal && (
-        <Suspense fallback={<div className="fixed inset-0 z-[150] bg-black/60 flex items-center justify-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
+        <Suspense fallback={<div className="fixed inset-0 z-[150] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={(data) => { addToast(`Welcome back, ${data.first_name}!`); setShowAuthModal(false); }} />
         </Suspense>
       )}
 
-      {detailedEvent && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setDetailedEvent(null)} />
-          <div id="event-detail-scroll" className="relative bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-300 scrollbar-hide p-8 md:p-12">
-            <button onClick={() => setDetailedEvent(null)} className="absolute top-6 right-6 p-2 bg-gray-100 hover:bg-orange-600 hover:text-white rounded-full transition-all z-20">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-            <div className="aspect-video w-full rounded-3xl overflow-hidden mb-10 bg-gray-100">
-               <img src={detailedEvent.imageUrl} className="w-full h-full object-cover" alt={detailedEvent.title} />
-            </div>
-            <div className="flex flex-wrap gap-2 mb-6">
-               <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.category}</span>
-               <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.cityName}</span>
-               {detailedEvent.ageRestriction && <span className="px-3 py-1 bg-slate-900 text-white rounded-lg text-[9px] font-black uppercase tracking-widest">{detailedEvent.ageRestriction}</span>}
-            </div>
-            <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-8 tracking-tighter leading-tight">{detailedEvent.title}</h3>
-            
-            <div className={`grid grid-cols-1 ${detailedEvent.organizerName ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-8 mb-10 pb-10 border-b border-gray-100`}>
-               <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Location</p>
-                  <p className="font-black text-gray-900">{detailedEvent.venue}</p>
-                  <p className="text-xs text-gray-500">{detailedEvent.location}</p>
-               </div>
-               <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Schedule</p>
-                  <p className="font-black text-gray-900">{detailedEvent.date}</p>
-                  <p className="text-xs text-gray-500">{detailedEvent.time}</p>
-               </div>
-               {detailedEvent.organizerName && (
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Hosted By</p>
-                    <p className="font-black text-gray-900 leading-tight mb-1">{detailedEvent.organizerName}</p>
-                    {detailedEvent.organizerUrl && (
-                      <a href={detailedEvent.organizerUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-orange-600 font-black uppercase tracking-widest hover:underline block">
-                        Host Website
-                      </a>
-                    )}
-                    {detailedEvent.organizerContact && <p className="text-xs text-gray-500 mt-1 font-medium">{detailedEvent.organizerContact}</p>}
+      <AnimatePresence>
+        {detailedEvent && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 md:p-8"
+          >
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => setDetailedEvent(null)} />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative bg-white rounded-[3rem] w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl scrollbar-hide"
+            >
+              <button onClick={() => setDetailedEvent(null)} className="absolute top-8 right-8 p-3 bg-gray-100 hover:bg-black hover:text-white rounded-2xl transition-all z-20">
+                <X className="w-6 h-6" />
+              </button>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2">
+                <div className="h-[400px] lg:h-auto relative">
+                  <img src={detailedEvent.imageUrl} className="w-full h-full object-cover" alt={detailedEvent.title} />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  <div className="absolute bottom-8 left-8 right-8">
+                     <div className="flex flex-wrap gap-3">
+                        <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.category}</span>
+                        <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.cityName}</span>
+                     </div>
                   </div>
-               )}
-            </div>
+                </div>
+                
+                <div className="p-10 md:p-16">
+                  <div className="flex items-center space-x-3 mb-8">
+                    <Calendar className="w-5 h-5 text-orange-600" />
+                    <span className="text-[11px] font-black uppercase tracking-[0.3em] text-orange-600">Metropolitan Schedule</span>
+                  </div>
+                  
+                  <h3 className="text-4xl md:text-6xl font-black text-gray-900 mb-10 tracking-tighter leading-[0.9] uppercase italic">{detailedEvent.title}</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-12 pb-12 border-b border-gray-100">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-4">Location</p>
+                      <div className="flex items-start">
+                        <MapPin className="w-5 h-5 text-black mr-3 mt-1" />
+                        <div>
+                          <p className="font-black text-gray-900 text-lg leading-tight">{detailedEvent.venue}</p>
+                          <p className="text-sm text-gray-500 font-medium mt-1">{detailedEvent.location}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-4">Timing</p>
+                      <div className="flex items-start">
+                        <Clock className="w-5 h-5 text-black mr-3 mt-1" />
+                        <div>
+                          <p className="font-black text-gray-900 text-lg leading-tight">{detailedEvent.date}</p>
+                          <p className="text-sm text-gray-500 font-medium mt-1">{detailedEvent.time}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-            <p className="text-gray-600 text-lg leading-relaxed mb-12">{detailedEvent.description}</p>
-            
-            <div className="flex flex-wrap gap-4">
-              {detailedEvent.sourceUrl && (
-                <a href={detailedEvent.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-block px-10 py-5 bg-gray-900 text-white font-black rounded-2xl hover:bg-orange-600 transition-all shadow-xl uppercase tracking-widest text-[10px]">Official Listing</a>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+                  <p className="text-gray-500 text-lg leading-relaxed mb-12 font-medium">{detailedEvent.description}</p>
+                  
+                  <div className="flex flex-wrap gap-4">
+                    {detailedEvent.sourceUrl && (
+                      <motion.a 
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        href={detailedEvent.sourceUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="inline-flex items-center px-10 py-5 bg-black text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]"
+                      >
+                        Official Listing
+                        <ArrowRight className="w-4 h-4 ml-3" />
+                      </motion.a>
+                    )}
+                    {detailedEvent.price && (
+                      <div className="px-10 py-5 bg-gray-50 border border-gray-100 text-gray-900 font-black rounded-2xl uppercase tracking-widest text-[10px] flex items-center">
+                        <DollarSign className="w-4 h-4 mr-2" />
+                        {detailedEvent.price}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Layout>
   );
 };
