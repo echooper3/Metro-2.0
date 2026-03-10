@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { WeatherData } from '../types';
-import { Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap } from 'lucide-react';
+import { Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LayoutProps {
@@ -8,8 +8,10 @@ interface LayoutProps {
   onHome: () => void;
   onAuth: () => void;
   onProfile: () => void;
+  onAdmin?: () => void;
   onPostEvent: () => void;
   isLoggedIn?: boolean;
+  isAdmin?: boolean;
   userAvatar?: string;
   weather?: WeatherData | null;
 }
@@ -45,7 +47,7 @@ const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
   );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onPostEvent, isLoggedIn, userAvatar, weather }) => {
+const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onAdmin, onPostEvent, isLoggedIn, isAdmin, userAvatar, weather }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
@@ -75,6 +77,17 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
             {weather && <WeatherWidget weather={weather} />}
             
             <div className="hidden md:flex items-center space-x-4">
+              {isAdmin && onAdmin && (
+                <motion.button 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onAdmin}
+                  className="px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-orange-600 bg-orange-50 border-2 border-orange-100 rounded-2xl hover:border-orange-600 transition-all"
+                >
+                  <TrendingUp className="w-4 h-4 mr-2" />
+                  Admin Hub
+                </motion.button>
+              )}
               <motion.button 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -130,6 +143,9 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <button onClick={onPostEvent} className="py-4 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest">Post Signal</button>
+                  {isAdmin && onAdmin && (
+                    <button onClick={onAdmin} className="py-4 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest">Admin Hub</button>
+                  )}
                   {isLoggedIn ? (
                     <button onClick={onProfile} className="py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">My Profile</button>
                   ) : (
@@ -200,6 +216,11 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
                 <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
                    <User className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Member Portal
                 </li>
+                {isAdmin && onAdmin && (
+                  <li onClick={onAdmin} className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
+                    <TrendingUp className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Admin Intelligence
+                  </li>
+                )}
               </ul>
             </div>
           </div>

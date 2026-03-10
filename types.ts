@@ -53,7 +53,8 @@ export enum AppView {
   LANDING = 'LANDING',
   CITY_DETAIL = 'CITY_DETAIL',
   SEARCH_RESULTS = 'SEARCH_RESULTS',
-  PROFILE = 'PROFILE'
+  PROFILE = 'PROFILE',
+  ADMIN = 'ADMIN'
 }
 
 export interface UserProfile {

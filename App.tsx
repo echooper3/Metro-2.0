@@ -12,11 +12,12 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, getDocFromServer } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp } from 'firebase/firestore';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
 const ProfileView = lazy(() => import('./components/ProfileView'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 
 const SEARCH_MESSAGES = [
   "Synchronizing Live Metropolitan Signals...",
@@ -48,6 +49,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
+  const isAdmin = user?.email === 'donva.adkism@gmail.com';
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -82,9 +84,40 @@ const App: React.FC = () => {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   };
 
+  const trackView = useCallback(async (type: 'page' | 'city' | 'event', id?: string) => {
+    if (!isAuthReady) return;
+    try {
+      const statsRef = doc(db, 'stats', 'traffic');
+      const updateData: any = {
+        totalViews: increment(1),
+        lastUpdated: serverTimestamp()
+      };
+      if (type === 'city' && id) {
+        updateData[`cityViews.${id.replace(/\s+/g, '_')}`] = increment(1);
+      }
+      if (type === 'event' && id) {
+        updateData[`eventViews.${id.replace(/\s+/g, '_')}`] = increment(1);
+      }
+      await updateDoc(statsRef, updateData).catch(async (err) => {
+        // If doc doesn't exist, create it
+        if (err.code === 'not-found') {
+          await setDoc(statsRef, {
+            totalViews: 1,
+            cityViews: type === 'city' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
+            eventViews: type === 'event' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
+            lastUpdated: serverTimestamp()
+          });
+        }
+      });
+    } catch (e) {
+      console.warn("Traffic tracking failed", e);
+    }
+  }, [isAuthReady]);
+
   const handleOpenDetails = useCallback((event: EventActivity) => {
     setDetailedEvent(event);
-  }, []);
+    trackView('event', event.title);
+  }, [trackView]);
 
   const handleToggleSave = useCallback(async (event: EventActivity) => {
     if (!user) {
@@ -264,7 +297,8 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
     updateWeather(city.name);
-  }, [loadCityEvents, updateWeather]);
+    trackView('city', city.name);
+  }, [loadCityEvents, updateWeather, trackView]);
 
   const handleCategoryClick = useCallback((cat: Category) => {
     startTransition(() => {
@@ -297,6 +331,7 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     updateWeather('Dallas');
     loadCityEvents('All', { category: 'All', page: 1 });
+    trackView('page');
   }, [updateWeather, loadCityEvents]);
 
   const handleProfile = useCallback(() => {
@@ -305,18 +340,14 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  const handleAdmin = useCallback(() => {
+    setView(AppView.ADMIN);
+    setSelectedCity(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
   const handleAuthSuccess = useCallback((userData: any) => {
-    const newUser: UserProfile = {
-      id: userData.user_id || `user-${Date.now()}`,
-      name: `${userData.first_name} ${userData.last_name}`,
-      email: userData.email,
-      savedEvents: [],
-      preferences: {
-        favoriteCategories: []
-      }
-    };
-    setUser(newUser);
-    addToast(`Welcome to The Metro, ${userData.first_name}`);
+    addToast(`Welcome to The Metro, ${userData.first_name || 'Member'}`);
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -384,8 +415,10 @@ const App: React.FC = () => {
       onHome={handleHome} 
       onAuth={() => setShowAuthModal(true)} 
       onProfile={handleProfile}
+      onAdmin={handleAdmin}
       onPostEvent={() => setShowCreateModal(true)}
       isLoggedIn={!!user}
+      isAdmin={isAdmin}
       userAvatar={user?.avatar}
       weather={weather}
     >
@@ -654,6 +687,12 @@ const App: React.FC = () => {
             onDeleteEvent={handleDeleteEvent}
             onUpdateProfile={handleUpdateProfile}
           />
+        </Suspense>
+      )}
+
+      {view === AppView.ADMIN && isAdmin && (
+        <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
+          <AdminDashboard />
         </Suspense>
       )}
 

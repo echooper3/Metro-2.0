@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { X, Shield, ArrowRight, User, Mail, Lock, Phone, MapPin, Calendar, Chrome } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth } from '../firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth, db } from '../firebase';
+import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -12,6 +13,7 @@ interface AuthModalProps {
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -46,14 +48,63 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
-      onSuccess(formData);
+    setError(null);
+    
+    try {
+      if (mode === 'LOGIN') {
+        const result = await signInWithEmailAndPassword(auth, formData.email, formData.password);
+        if (result.user) {
+          onSuccess({
+            user_id: result.user.uid,
+            first_name: result.user.displayName?.split(' ')[0] || 'Member',
+            email: result.user.email
+          });
+          onClose();
+        }
+      } else {
+        const result = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        if (result.user) {
+          await updateProfile(result.user, {
+            displayName: `${formData.first_name} ${formData.last_name}`
+          });
+          
+          const profileData = {
+            id: result.user.uid,
+            name: `${formData.first_name} ${formData.last_name}`,
+            email: formData.email,
+            phone: formData.phone,
+            birthday: formData.birthday,
+            zipCode: formData.zip_code,
+            metroId: formData.user_id,
+            savedEvents: [],
+            preferences: { favoriteCategories: [] },
+            createdAt: new Date().toISOString()
+          };
+          
+          await setDoc(doc(db, 'users', result.user.uid), profileData);
+          
+          onSuccess({
+            user_id: result.user.uid,
+            first_name: formData.first_name,
+            email: formData.email
+          });
+          onClose();
+        }
+      }
+    } catch (err: any) {
+      console.error("Auth Error:", err);
+      let msg = "Authentication failed";
+      if (err.code === 'auth/user-not-found') msg = "No account found with this email.";
+      else if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
+      else if (err.code === 'auth/email-already-in-use') msg = "An account already exists with this email.";
+      else if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      setError(msg);
+    } finally {
       setIsSubmitting(false);
-      onClose();
-    }, 1200);
+    }
   };
 
   const inputClasses = "w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-12 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all placeholder:text-gray-300";
@@ -86,7 +137,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             <Shield className="w-3 h-3 text-orange-600" />
             <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Secure Metropolitan Access</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Member Login</h2>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">{mode === 'LOGIN' ? 'Member Login' : 'Join The Metro'}</h2>
         </header>
 
         {error && (
@@ -95,6 +146,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             {error}
           </div>
         )}
+
+        <div className="flex bg-gray-50 p-2 rounded-3xl mb-10">
+          <button 
+            onClick={() => setMode('LOGIN')}
+            className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'LOGIN' ? 'bg-white text-black shadow-xl' : 'text-gray-400 hover:text-black'}`}
+          >
+            Login
+          </button>
+          <button 
+            onClick={() => setMode('SIGNUP')}
+            className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'SIGNUP' ? 'bg-white text-black shadow-xl' : 'text-gray-400 hover:text-black'}`}
+          >
+            Sign Up
+          </button>
+        </div>
 
         <div className="space-y-4 mb-10">
           <motion.button 
@@ -116,24 +182,28 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="relative">
-              <label className={labelClasses}>First Name</label>
-              <input required type="text" className={inputClasses} value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} placeholder="Jane" />
-              <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-            </div>
-            <div className="relative">
-              <label className={labelClasses}>Last Name</label>
-              <input required type="text" className={inputClasses} value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} placeholder="Doe" />
-              <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-            </div>
-          </div>
+          {mode === 'SIGNUP' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                  <label className={labelClasses}>First Name</label>
+                  <input required type="text" className={inputClasses} value={formData.first_name} onChange={e => setFormData({...formData, first_name: e.target.value})} placeholder="Jane" />
+                  <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+                </div>
+                <div className="relative">
+                  <label className={labelClasses}>Last Name</label>
+                  <input required type="text" className={inputClasses} value={formData.last_name} onChange={e => setFormData({...formData, last_name: e.target.value})} placeholder="Doe" />
+                  <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+                </div>
+              </div>
 
-          <div className="relative">
-            <label className={labelClasses}>User ID</label>
-            <input required type="text" className={inputClasses} value={formData.user_id} onChange={e => setFormData({...formData, user_id: e.target.value})} placeholder="metro_jane_99" />
-            <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-          </div>
+              <div className="relative">
+                <label className={labelClasses}>User ID</label>
+                <input required type="text" className={inputClasses} value={formData.user_id} onChange={e => setFormData({...formData, user_id: e.target.value})} placeholder="metro_jane_99" />
+                <User className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+              </div>
+            </>
+          )}
 
           <div className="relative">
             <label className={labelClasses}>Email Address</label>
@@ -147,24 +217,28 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             <Lock className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="relative">
-              <label className={labelClasses}>Phone</label>
-              <input required type="tel" className={inputClasses} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="(555) 000-0000" />
-              <Phone className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-            </div>
-            <div className="relative">
-              <label className={labelClasses}>Zip Code</label>
-              <input required type="text" className={inputClasses} value={formData.zip_code} onChange={e => setFormData({...formData, zip_code: e.target.value})} placeholder="74101" />
-              <MapPin className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-            </div>
-          </div>
+          {mode === 'SIGNUP' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                  <label className={labelClasses}>Phone</label>
+                  <input required type="tel" className={inputClasses} value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} placeholder="(555) 000-0000" />
+                  <Phone className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+                </div>
+                <div className="relative">
+                  <label className={labelClasses}>Zip Code</label>
+                  <input required type="text" className={inputClasses} value={formData.zip_code} onChange={e => setFormData({...formData, zip_code: e.target.value})} placeholder="74101" />
+                  <MapPin className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+                </div>
+              </div>
 
-          <div className="relative">
-            <label className={labelClasses}>Birthday</label>
-            <input required type="date" className={inputClasses} value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})} />
-            <Calendar className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
-          </div>
+              <div className="relative">
+                <label className={labelClasses}>Birthday</label>
+                <input required type="date" className={inputClasses} value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})} />
+                <Calendar className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+              </div>
+            </>
+          )}
 
           <motion.button 
             whileHover={{ scale: 1.02 }}
@@ -177,14 +251,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                Enter The Metro
+                {mode === 'LOGIN' ? 'Enter The Metro' : 'Create Metro ID'}
                 <ArrowRight className="w-4 h-4 ml-3" />
               </>
             )}
           </motion.button>
 
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-[0.2em] text-center mt-8">
-            By entering, you agree to our terms and privacy policy.
+            {mode === 'LOGIN' ? "Don't have an account? " : "Already have an account? "}
+            <button 
+              type="button"
+              onClick={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
+              className="text-black hover:text-orange-600 transition-colors"
+            >
+              {mode === 'LOGIN' ? 'Sign Up' : 'Login'}
+            </button>
           </p>
         </form>
       </motion.div>

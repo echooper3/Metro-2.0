@@ -104,6 +104,12 @@ service cloud.firestore {
       allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
     }
 
+    match /stats/{statId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAuthenticated(); // Allow users to increment traffic stats
+    }
+
     match /test/connection {
       allow read: if true;
     }

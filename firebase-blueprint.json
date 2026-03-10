@@ -42,6 +42,17 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "category", "description", "date", "venue", "cityName"]
+    },
+    "Stats": {
+      "title": "Metropolitan Stats",
+      "description": "Traffic and engagement metrics",
+      "type": "object",
+      "properties": {
+        "totalViews": { "type": "number" },
+        "cityViews": { "type": "object" },
+        "eventViews": { "type": "object" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
@@ -52,6 +63,10 @@
     "/events/{eventId}": {
       "schema": "Event",
       "description": "Metropolitan event signals"
+    },
+    "/stats/{statId}": {
+      "schema": "Stats",
+      "description": "Global traffic metrics"
     }
   }
 }

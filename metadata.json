@@ -1,6 +1,6 @@
 {
   "name": "Inside The Metro",
-  "description": "Your ultimate guide to events and activities in Tulsa, Oklahoma City, Dallas, and Houston. Explore sports, concerts, arts, and more.",
+  "description": "The definitive regional intelligence network for the South-Central metropolitan heartbeat. Sourcing professional sports, underground culture, and local legends across Tulsa, OKC, Dallas, and Houston.",
   "requestFramePermissions": [
     "geolocation"
   ]
