@@ -33,6 +33,7 @@ export interface EventActivity {
   distance?: number; 
   ageRestriction?: string; 
   userCreated?: boolean;
+  userId?: string;
   price?: string;
   isFree?: boolean;
   priceLevel?: string;
@@ -51,7 +52,20 @@ export interface GroundingSource {
 export enum AppView {
   LANDING = 'LANDING',
   CITY_DETAIL = 'CITY_DETAIL',
-  SEARCH_RESULTS = 'SEARCH_RESULTS'
+  SEARCH_RESULTS = 'SEARCH_RESULTS',
+  PROFILE = 'PROFILE'
+}
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  savedEvents: string[]; // Array of event IDs
+  preferences: {
+    favoriteCity?: string;
+    favoriteCategories: Category[];
+  };
 }
 
 export type Category = 

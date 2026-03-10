@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { X, Shield, ArrowRight, User, Mail, Lock, Phone, MapPin, Calendar } from 'lucide-react';
+import { X, Shield, ArrowRight, User, Mail, Lock, Phone, MapPin, Calendar, Chrome } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth } from '../firebase';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -9,6 +11,7 @@ interface AuthModalProps {
 
 const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -19,6 +22,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     zip_code: '',
     user_id: ''
   });
+
+  const handleGoogleLogin = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    const provider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, provider);
+      if (result.user) {
+        onSuccess({
+          user_id: result.user.uid,
+          first_name: result.user.displayName?.split(' ')[0] || 'Member',
+          last_name: result.user.displayName?.split(' ').slice(1).join(' ') || '',
+          email: result.user.email
+        });
+        onClose();
+      }
+    } catch (err: any) {
+      console.error("Google Login Error:", err);
+      setError(err.message || "Authentication failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +88,32 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
           </div>
           <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Member Login</h2>
         </header>
+
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 text-[10px] font-black uppercase tracking-widest">
+            <X className="w-4 h-4" />
+            {error}
+          </div>
+        )}
+
+        <div className="space-y-4 mb-10">
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleGoogleLogin}
+            disabled={isSubmitting}
+            className="w-full py-5 bg-white border-2 border-gray-100 text-gray-900 font-black rounded-2xl hover:border-black transition-all uppercase tracking-widest text-[10px] flex items-center justify-center gap-3 shadow-xl shadow-black/5"
+          >
+            <Chrome className="w-4 h-4" />
+            Continue with Google
+          </motion.button>
+          
+          <div className="relative flex items-center py-4">
+            <div className="flex-grow border-t border-gray-100"></div>
+            <span className="flex-shrink mx-4 text-[9px] font-black text-gray-300 uppercase tracking-widest">Or Metropolitan ID</span>
+            <div className="flex-grow border-t border-gray-100"></div>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-2 gap-4">

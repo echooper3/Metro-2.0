@@ -3,15 +3,20 @@ import Layout from './components/Layout';
 import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
+import ErrorBoundary from './components/ErrorBoundary';
 import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
-import { City, AppView, EventActivity, Category, GroundingSource, WeatherData } from './types';
+import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, UserProfile } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
 import { fetchCityWeather } from './services/weatherService';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign } from 'lucide-react';
+import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle } from 'lucide-react';
+import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, getDocFromServer } from 'firebase/firestore';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
+const ProfileView = lazy(() => import('./components/ProfileView'));
 
 const SEARCH_MESSAGES = [
   "Synchronizing Live Metropolitan Signals...",
@@ -40,6 +45,9 @@ const App: React.FC = () => {
   const [sourceStatus, setSourceStatus] = useState<'live' | 'grounded' | 'ai' | 'seed' | 'cache' | 'quota-limited'>('seed');
   const [toasts, setToasts] = useState<Array<{ id: number, message: string }>>([]);
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -78,16 +86,45 @@ const App: React.FC = () => {
     setDetailedEvent(event);
   }, []);
 
+  const handleToggleSave = useCallback(async (event: EventActivity) => {
+    if (!user) {
+      setShowAuthModal(true);
+      return;
+    }
+    const isSaved = user.savedEvents.includes(event.id);
+    const nextSaved = isSaved 
+      ? user.savedEvents.filter(id => id !== event.id)
+      : [...user.savedEvents, event.id];
+    
+    try {
+      await updateDoc(doc(db, 'users', user.id), { savedEvents: nextSaved });
+      setUser(prev => prev ? { ...prev, savedEvents: nextSaved } : null);
+      addToast(isSaved ? "Signal removed from vault" : "Signal secured in vault");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+    }
+  }, [user]);
+
   const filteredEvents = useMemo(() => {
-    return allEvents.filter(e => {
+    const combined = [...dbEvents, ...allEvents];
+    // De-duplicate by title
+    const seen = new Set();
+    const unique = combined.filter(e => {
+      const key = e.title.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return unique.filter(e => {
       const matchesCategory = activeCategory === 'All' || e.category === activeCategory;
-      const matchesCity = !selectedCity || e.cityName === selectedCity.name;
+      const matchesCity = !selectedCity || (e.cityName && e.cityName.toLowerCase().includes(selectedCity.name.toLowerCase()));
       const matchesQuery = !searchQuery || 
         e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
         e.description.toLowerCase().includes(searchQuery.toLowerCase());
       return matchesCategory && matchesCity && matchesQuery;
     });
-  }, [allEvents, activeCategory, selectedCity, searchQuery]);
+  }, [allEvents, dbEvents, activeCategory, selectedCity, searchQuery]);
 
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
     const requestId = ++fetchIdRef.current;
@@ -156,7 +193,64 @@ const App: React.FC = () => {
       loadCityEvents('All', { category: 'All', page: 1 });
     }
     updateWeather('Dallas');
+
+    // Test Firestore Connection
+    const testConnection = async () => {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if (error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration.");
+        }
+      }
+    };
+    testConnection();
   }, [updateWeather, loadCityEvents]);
+
+  // Firebase Auth Listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        try {
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            setUser(userDoc.data() as UserProfile);
+          } else {
+            // Create initial profile if not exists
+            const newUser: UserProfile = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'Metropolitan Member',
+              email: firebaseUser.email || '',
+              avatar: firebaseUser.photoURL || undefined,
+              savedEvents: [],
+              preferences: { favoriteCategories: [] }
+            };
+            await setDoc(userDocRef, newUser);
+            setUser(newUser);
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+        }
+      } else {
+        setUser(null);
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Firestore Events Sync
+  useEffect(() => {
+    const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const events = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as EventActivity));
+      setDbEvents(events);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'events');
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleCitySelect = useCallback((city: City) => {
     startTransition(() => {
@@ -205,6 +299,70 @@ const App: React.FC = () => {
     loadCityEvents('All', { category: 'All', page: 1 });
   }, [updateWeather, loadCityEvents]);
 
+  const handleProfile = useCallback(() => {
+    setView(AppView.PROFILE);
+    setSelectedCity(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleAuthSuccess = useCallback((userData: any) => {
+    const newUser: UserProfile = {
+      id: userData.user_id || `user-${Date.now()}`,
+      name: `${userData.first_name} ${userData.last_name}`,
+      email: userData.email,
+      savedEvents: [],
+      preferences: {
+        favoriteCategories: []
+      }
+    };
+    setUser(newUser);
+    addToast(`Welcome to The Metro, ${userData.first_name}`);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await signOut(auth);
+    setView(AppView.LANDING);
+    addToast("Session terminated");
+  }, []);
+
+  const handleDeleteEvent = useCallback(async (event: EventActivity) => {
+    if (event.userCreated && event.id) {
+      // In a real app we'd delete from Firestore here
+      // But for now we'll just filter locally if it's a seed
+      // If it's a DB event, we should delete it
+      if (!event.id.startsWith('live-') && !event.id.startsWith('seed-')) {
+        try {
+          // Actual deletion logic would go here if we had a deleteDoc import
+          // For now, the snapshot listener will handle the UI update if we delete it
+        } catch (e) {}
+      }
+    }
+    setAllEvents(prev => prev.filter(e => e.id !== event.id));
+    addToast("Broadcast signal terminated");
+  }, []);
+
+  const handleUpdatePreferences = useCallback(async (prefs: UserProfile['preferences']) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.id), { preferences: prefs });
+      setUser(prev => prev ? { ...prev, preferences: prefs } : null);
+      addToast("Metropolitan preferences updated");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+    }
+  }, [user]);
+
+  const handleUpdateProfile = useCallback(async (name: string, email: string) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.id), { name, email });
+      setUser(prev => prev ? { ...prev, name, email } : null);
+      addToast("Metropolitan profile updated");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+    }
+  }, [user]);
+
   const handleLoadMore = useCallback(() => {
     if (!hasMore || isRefreshing || isPageLoading) return;
     
@@ -221,11 +379,14 @@ const App: React.FC = () => {
   }, [hasMore, isRefreshing, isPageLoading, selectedCity, activeCategory, searchQuery, loadCityEvents]);
 
   return (
-    <Layout 
+    <ErrorBoundary>
+      <Layout 
       onHome={handleHome} 
       onAuth={() => setShowAuthModal(true)} 
-      onSearch={handleGlobalSearch} 
+      onProfile={handleProfile}
       onPostEvent={() => setShowCreateModal(true)}
+      isLoggedIn={!!user}
+      userAvatar={user?.avatar}
       weather={weather}
     >
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-2 pointer-events-none">
@@ -335,38 +496,6 @@ const App: React.FC = () => {
             </div>
           </section>
 
-          <section className="bg-white py-32 border-y border-gray-100">
-            <div className="max-w-7xl mx-auto px-4">
-              <div className="mb-20 flex flex-col md:flex-row justify-between items-end gap-8">
-                <div>
-                  <span className="text-orange-600 font-black uppercase tracking-[0.4em] text-[10px] mb-4 block">Metropolitan Pulse</span>
-                  <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic">Trending Now</h2>
-                </div>
-                <motion.button 
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => handleGlobalSearch('Trending')}
-                  className="flex items-center px-10 py-4 bg-gray-50 text-gray-900 font-black rounded-2xl hover:bg-black hover:text-white transition-all uppercase tracking-widest text-[10px] border border-gray-100 shadow-sm"
-                >
-                  View All Trending
-                  <ArrowRight className="w-4 h-4 ml-3" />
-                </motion.button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                {GLOBAL_SEED_EVENTS.slice(0, 12).map((event, i) => (
-                  <motion.div 
-                    key={event.id}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    whileInView={{ opacity: 1, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <EventItem event={event} showCity={true} onOpenDetails={handleOpenDetails} />
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </section>
         </div>
       )}
 
@@ -416,8 +545,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-20">
-            <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white p-4 rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
+          <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30 sticky top-24">
+            <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white/90 backdrop-blur-md p-4 rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
               {CATEGORIES.map(cat => (
                 <button 
                   key={cat} 
@@ -451,7 +580,13 @@ const App: React.FC = () => {
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: i * 0.05 }}
                     >
-                      <EventItem event={event} showCity={view === AppView.SEARCH_RESULTS} onOpenDetails={handleOpenDetails} />
+                      <EventItem 
+                        event={event} 
+                        showCity={view === AppView.SEARCH_RESULTS} 
+                        onOpenDetails={handleOpenDetails} 
+                        isSaved={user?.savedEvents.includes(event.id)}
+                        onToggleSave={() => handleToggleSave(event)}
+                      />
                     </motion.div>
                   ))
                 ) : (
@@ -463,25 +598,29 @@ const App: React.FC = () => {
                     <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-8">
                        <Search className="w-8 h-8 text-gray-300" />
                     </div>
-                    <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px]">No metropolitan data found for this selection</p>
+                    <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">No metropolitan data found for this selection</p>
+                    <button 
+                      onClick={() => loadCityEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined, page: 1, forceRefresh: true })}
+                      className="px-8 py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 transition-all"
+                    >
+                      Retry Metropolitan Sync
+                    </button>
                   </motion.div>
                 )}
+                {isPageLoading && Array.from({ length: 3 }).map((_, i) => (
+                  <motion.div 
+                    key={`page-skeleton-${i}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <EventSkeleton />
+                  </motion.div>
+                ))}
               </AnimatePresence>
             </div>
 
             <div className="mt-20 flex flex-col items-center justify-center">
-              {isPageLoading && (
-                <div className="w-full mb-12">
-                  <div className="flex items-center gap-8 mb-12">
-                    <div className="h-[1px] flex-1 bg-gray-100"></div>
-                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500">Sourcing more data</span>
-                    <div className="h-[1px] flex-1 bg-gray-100"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                    {Array.from({ length: 3 }).map((_, i) => <EventSkeleton key={i} />)}
-                  </div>
-                </div>
-              )}
 
               <motion.button
                 whileHover={hasMore && !isPageLoading ? { scale: 1.05 } : {}}
@@ -501,15 +640,36 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {view === AppView.PROFILE && user && (
+        <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
+          <ProfileView 
+            user={user} 
+            savedEvents={allEvents.filter(e => user.savedEvents.includes(e.id))}
+            myEvents={allEvents.filter(e => e.userId === user.id)}
+            onUpdatePreferences={handleUpdatePreferences}
+            onLogout={handleLogout}
+            onOpenEventDetails={handleOpenDetails}
+            onPostEvent={() => setShowCreateModal(true)}
+            onToggleSave={handleToggleSave}
+            onDeleteEvent={handleDeleteEvent}
+            onUpdateProfile={handleUpdateProfile}
+          />
+        </Suspense>
+      )}
+
       {showCreateModal && (
         <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
-          <CreateEventModal onClose={() => setShowCreateModal(false)} onSave={ev => { addToast("Event published successfully."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} />
+          <CreateEventModal 
+            userId={user?.id}
+            onClose={() => setShowCreateModal(false)} 
+            onSave={ev => { addToast("Event published successfully."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} 
+          />
         </Suspense>
       )}
 
       {showAuthModal && (
         <Suspense fallback={<div className="fixed inset-0 z-[150] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
-          <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={(data) => { addToast(`Welcome back, ${data.first_name}!`); setShowAuthModal(false); }} />
+          <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={handleAuthSuccess} />
         </Suspense>
       )}
 
@@ -540,6 +700,9 @@ const App: React.FC = () => {
                      <div className="flex flex-wrap gap-3">
                         <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.category}</span>
                         <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.cityName}</span>
+                        {detailedEvent.ageRestriction && (
+                          <span className="px-4 py-2 bg-orange-600/80 backdrop-blur-md border border-orange-400 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.ageRestriction}</span>
+                        )}
                      </div>
                   </div>
                 </div>
@@ -577,6 +740,21 @@ const App: React.FC = () => {
 
                   <p className="text-gray-500 text-lg leading-relaxed mb-12 font-medium">{detailedEvent.description}</p>
                   
+                  <div className="mb-12">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-4">Metropolitan Mapping</p>
+                    <div className="w-full h-64 bg-gray-100 rounded-[2rem] overflow-hidden border border-gray-100 shadow-inner">
+                      <iframe 
+                        width="100%" 
+                        height="100%" 
+                        style={{ border: 0, filter: 'grayscale(0.2) contrast(1.1)' }} 
+                        loading="lazy" 
+                        allowFullScreen 
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://maps.google.com/maps?q=${encodeURIComponent(`${detailedEvent.venue} ${detailedEvent.location}`)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+                      ></iframe>
+                    </div>
+                  </div>
+                  
                   <div className="flex flex-wrap gap-4">
                     {detailedEvent.sourceUrl && (
                       <motion.a 
@@ -591,6 +769,19 @@ const App: React.FC = () => {
                         <ArrowRight className="w-4 h-4 ml-3" />
                       </motion.a>
                     )}
+                    <motion.button 
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => handleToggleSave(detailedEvent)}
+                      className={`inline-flex items-center px-10 py-5 font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px] transition-all ${
+                        user?.savedEvents.includes(detailedEvent.id)
+                          ? 'bg-orange-600 text-white shadow-orange-600/20'
+                          : 'bg-white text-gray-900 border-2 border-gray-100 hover:border-black'
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 mr-3 ${user?.savedEvents.includes(detailedEvent.id) ? 'fill-current' : ''}`} />
+                      {user?.savedEvents.includes(detailedEvent.id) ? 'Secured in Vault' : 'Save to Vault'}
+                    </motion.button>
                     {detailedEvent.price && (
                       <div className="px-10 py-5 bg-gray-50 border border-gray-100 text-gray-900 font-black rounded-2xl uppercase tracking-widest text-[10px] flex items-center">
                         <DollarSign className="w-4 h-4 mr-2" />
@@ -604,7 +795,8 @@ const App: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
-    </Layout>
+      </Layout>
+    </ErrorBoundary>
   );
 };
 

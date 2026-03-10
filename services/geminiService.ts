@@ -78,7 +78,8 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   const currentDateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   // Streamlined prompt to reduce token count and speed up generation
-  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List exactly 12 REAL future events.`;
+  let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List at least 12 REAL future events.
+  CRITICAL: The "cityName" field MUST be exactly one of: "Tulsa", "Oklahoma City", "Dallas", or "Houston".`;
   if (category && category !== 'All') context += ` Cat: ${category}.`;
   if (keyword) context += ` Search: ${keyword}.`;
   if (page > 1) context += ` This is page ${page} of results. Provide completely different events from typical top results.`;
@@ -87,9 +88,8 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   }
 
   const config: any = {
-    thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     responseMimeType: "application/json",
-    systemInstruction: "JSON ARRAY ONLY. No markdown. No text outside array. Valid JSON. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer name, website, and contact info.",
+    systemInstruction: "JSON ARRAY ONLY. No markdown. No text outside array. Valid JSON. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer name, website, and contact info. Ensure events are REAL and upcoming.",
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -161,8 +161,16 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
 
   try {
     const useGrounding = !options.fastSync;
-    const result = await queryGemini(cityName, options, useGrounding, controller.signal);
+    let result = await queryGemini(cityName, options, useGrounding, controller.signal);
     
+    // Fallback: If grounding returned nothing, try without grounding
+    if ((!result || result.events.length === 0) && useGrounding) {
+      console.warn("Grounding returned no events, falling back to AI generation.");
+      result = await queryGemini(cityName, { ...options, fastSync: true }, false, controller.signal);
+    }
+
+    if (!result) return null;
+
     let status: any = 'ai';
     if (options.fastSync) status = 'live';
     else if (result.sources.length > 0) status = 'grounded';

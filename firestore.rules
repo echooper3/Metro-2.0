@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches request.auth.uid)
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - email: string (required)
+    //   - avatar: string (optional)
+    //   - savedEvents: list (required)
+    //   - preferences: map (required)
+    //
+    // Collection: events
+    // Document ID: {eventId}
+    // Fields:
+    //   - id: string (required)
+    //   - title: string (required, < 100 chars)
+    //   - category: string (required)
+    //   - description: string (required, < 2000 chars)
+    //   - date: string (required)
+    //   - time: string (required)
+    //   - venue: string (required)
+    //   - location: string (required)
+    //   - cityName: string (required)
+    //   - imageUrl: string (optional)
+    //   - price: string (optional)
+    //   - ageRestriction: string (optional)
+    //   - userId: string (required)
+    //   - userCreated: bool (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "donva.adkism@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.savedEvents is list &&
+             data.preferences is map;
+    }
+
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 150 &&
+             data.description is string && data.description.size() < 3000 &&
+             data.category is string &&
+             data.cityName is string &&
+             data.venue is string &&
+             data.userId is string &&
+             data.userCreated is bool;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && !('role' in request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == resource.data.role || (!('role' in resource.data) && !('role' in request.resource.data))) || isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if true; // Events are public
+      allow create: if isAuthenticated() && isValidEvent(request.resource.data) && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.userCreated == true;
+      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid && isValidEvent(request.resource.data) && request.resource.data.userId == resource.data.userId) || isAdmin();
+      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

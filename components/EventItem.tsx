@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { EventActivity } from '../types';
-import { Calendar, MapPin, Clock, ExternalLink, TrendingUp, DollarSign, Users, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Clock, ExternalLink, TrendingUp, DollarSign, Users, ChevronRight, Heart } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface EventItemProps {
   event: EventActivity;
   showCity?: boolean;
   onOpenDetails: (event: EventActivity) => void;
+  isSaved?: boolean;
+  onToggleSave?: (e: React.MouseEvent) => void;
 }
 
-const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails }) => {
+const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, isSaved, onToggleSave }) => {
   const getCategoryColor = (category: string) => {
     const c = category.toLowerCase();
     if (c.includes('sports')) return 'bg-blue-50 text-blue-600 border-blue-100';
@@ -65,6 +67,26 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails })
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         
+        <div className="absolute top-6 right-6 flex flex-wrap gap-2">
+          {onToggleSave && (
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSave(e);
+              }}
+              className={`w-10 h-10 rounded-2xl flex items-center justify-center backdrop-blur-md transition-all ${
+                isSaved 
+                  ? 'bg-orange-600 text-white shadow-xl shadow-orange-600/20' 
+                  : 'bg-white/20 text-white hover:bg-white hover:text-black'
+              }`}
+            >
+              <Heart className={`w-5 h-5 ${isSaved ? 'fill-current' : ''}`} />
+            </motion.button>
+          )}
+        </div>
+
         <div className="absolute top-6 left-6 flex flex-wrap gap-2">
           <span className={`px-4 py-2 rounded-2xl text-[9px] font-black uppercase tracking-widest border backdrop-blur-md ${getCategoryColor(event.category)}`}>
             {event.category}
@@ -120,6 +142,11 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails })
             {event.isFree && (
               <span className="text-[11px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1.5 rounded-xl">
                 Free
+              </span>
+            )}
+            {event.ageRestriction && (
+              <span className="text-[11px] font-black text-orange-600 uppercase tracking-widest bg-orange-50 px-3 py-1.5 rounded-xl">
+                {event.ageRestriction}
               </span>
             )}
           </div>

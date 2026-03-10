@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { WeatherData } from '../types';
-import { Search, Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap } from 'lucide-react';
+import { Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface LayoutProps {
   children: React.ReactNode;
   onHome: () => void;
   onAuth: () => void;
-  onSearch: (query: string) => void;
+  onProfile: () => void;
   onPostEvent: () => void;
   isLoggedIn?: boolean;
+  userAvatar?: string;
   weather?: WeatherData | null;
 }
 
@@ -44,16 +45,8 @@ const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
   );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onPostEvent, isLoggedIn, weather }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onPostEvent, isLoggedIn, userAvatar, weather }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (searchQuery.trim()) {
-      onSearch(searchQuery);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -62,7 +55,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onP
           <motion.div 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => { setSearchQuery(''); onHome(); }}
+            onClick={() => { onHome(); }}
             className="flex items-center space-x-4 cursor-pointer group shrink-0"
           >
             <div className="w-12 h-12 bg-black rounded-[1.25rem] flex items-center justify-center transform group-hover:rotate-6 transition-transform shadow-xl shadow-black/10">
@@ -76,19 +69,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onP
             </div>
           </motion.div>
 
-          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-grow max-w-2xl relative group">
-            <input 
-              type="text" 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search metropolitan signals..."
-              className="w-full bg-gray-50 border-2 border-transparent rounded-[1.5rem] py-4 px-14 text-sm focus:ring-0 focus:border-black focus:bg-white transition-all outline-none font-bold placeholder:text-gray-300"
-            />
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-300 group-focus-within:text-black transition-colors" />
-            <div className="absolute right-5 top-1/2 -translate-y-1/2 flex items-center space-x-2">
-               <span className="text-[9px] font-black text-gray-300 uppercase tracking-widest border border-gray-200 px-2 py-1 rounded-md">CMD + K</span>
-            </div>
-          </form>
+            <div className="flex-grow" />
 
           <div className="flex items-center space-x-4 shrink-0">
             {weather && <WeatherWidget weather={weather} />}
@@ -103,14 +84,30 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onP
                 <Plus className="w-4 h-4 mr-2 stroke-[3px]" />
                 Post Signal
               </motion.button>
-              <motion.button 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={onAuth}
-                className="px-8 py-3.5 text-[10px] font-black uppercase tracking-widest text-white bg-black rounded-2xl hover:bg-orange-600 shadow-2xl shadow-black/10 transition-all"
-              >
-                Join Metro
-              </motion.button>
+              
+              {isLoggedIn ? (
+                <motion.button 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onProfile}
+                  className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center overflow-hidden shadow-xl shadow-black/10 hover:bg-orange-600 transition-all"
+                >
+                  {userAvatar ? (
+                    <img src={userAvatar} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-6 h-6 text-white" />
+                  )}
+                </motion.button>
+              ) : (
+                <motion.button 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onAuth}
+                  className="px-8 py-3.5 text-[10px] font-black uppercase tracking-widest text-white bg-black rounded-2xl hover:bg-orange-600 shadow-2xl shadow-black/10 transition-all"
+                >
+                  Join Metro
+                </motion.button>
+              )}
             </div>
 
             <button 
@@ -131,19 +128,13 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onSearch, onP
               className="md:hidden bg-white border-t border-gray-100 overflow-hidden"
             >
               <div className="p-6 space-y-6">
-                <form onSubmit={handleSearchSubmit} className="relative">
-                  <input 
-                    type="text" 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search signals..."
-                    className="w-full bg-gray-50 rounded-2xl py-4 px-12 text-sm font-bold outline-none"
-                  />
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                </form>
                 <div className="grid grid-cols-2 gap-4">
                   <button onClick={onPostEvent} className="py-4 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest">Post Signal</button>
-                  <button onClick={onAuth} className="py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">Join Metro</button>
+                  {isLoggedIn ? (
+                    <button onClick={onProfile} className="py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">My Profile</button>
+                  ) : (
+                    <button onClick={onAuth} className="py-4 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">Join Metro</button>
+                  )}
                 </div>
               </div>
             </motion.div>

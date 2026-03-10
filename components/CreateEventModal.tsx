@@ -5,10 +5,13 @@ import { searchPlaces } from '../services/geminiService';
 import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface CreateEventModalProps {
   onClose: () => void;
   onSave: (event: EventActivity) => void;
+  userId?: string;
 }
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -33,10 +36,11 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
   });
 };
 
-const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) => {
+const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId }) => {
   const [formData, setFormData] = useState<Partial<EventActivity>>({
     title: '', category: 'Community', description: '', location: '', venue: '',
-    date: new Date().toISOString().split('T')[0], time: '19:00', cityName: 'Tulsa'
+    date: new Date().toISOString().split('T')[0], time: '19:00', cityName: 'Tulsa',
+    price: '', ageRestriction: ''
   });
 
   const [addressInput, setAddressInput] = useState('');
@@ -128,19 +132,27 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
     setIsSubmitting(true);
     
     const [y, m, d] = (formData.date || '').split('-');
-    const finalEvent: EventActivity = {
-        ...formData as EventActivity,
-        id: `user-${Date.now()}`,
+    const finalEvent: any = {
+        ...formData,
+        userId,
         date: formData.date ? `${m}/${d}/${y}` : '',
         location: formData.location || addressInput,
         venue: formData.venue || addressInput,
         userCreated: true,
         isTrending: false,
-        imageUrl: imagePreview || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800`
+        imageUrl: imagePreview || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800`,
+        createdAt: serverTimestamp()
     };
 
-    onSave(finalEvent);
-    onClose();
+    try {
+      const docRef = await addDoc(collection(db, 'events'), finalEvent);
+      onSave({ ...finalEvent, id: docRef.id });
+      onClose();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'events');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const getSuggestionIcon = (type: LocationSuggestion['type']) => {
@@ -304,6 +316,17 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave }) 
                 <input type="time" className={inputClasses} value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
                 <Clock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className={labelClasses}>Price / Entry Fee</label>
+              <input type="text" className={inputClasses} value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} placeholder="e.g. $20, Free, Donation" />
+            </div>
+            <div className="space-y-2">
+              <label className={labelClasses}>Age Restriction</label>
+              <input type="text" className={inputClasses} value={formData.ageRestriction} onChange={e => setFormData({...formData, ageRestriction: e.target.value})} placeholder="e.g. 21+, All Ages" />
             </div>
           </div>
 
