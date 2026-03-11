@@ -204,4 +204,9 @@ export const SEED_EVENTS: Record<string, EventActivity[]> = {
   houston: [],
 };
 
-export const GLOBAL_SEED_EVENTS: EventActivity[] = [];
+export const GLOBAL_SEED_EVENTS: EventActivity[] = [
+  ...REAL_SEED_EVENTS.tulsa,
+  ...REAL_SEED_EVENTS.okc,
+  ...REAL_SEED_EVENTS.dallas,
+  ...REAL_SEED_EVENTS.houston
+];

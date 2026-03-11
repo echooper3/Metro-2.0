@@ -231,7 +231,7 @@ const App: React.FC = () => {
       setIsVerifying(false);
       setIsPageLoading(false);
     }
-  }, [activeCategory]);
+  }, [activeCategory, allEvents.length, addToast, trackView]);
 
   useEffect(() => {
     const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });

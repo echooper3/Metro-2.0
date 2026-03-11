@@ -183,6 +183,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
     activeRequests.delete(cacheKey);
     return finalResult;
   } catch (error: any) {
+    console.error("Gemini Fetch Error:", error);
     activeRequests.delete(cacheKey);
     return null;
   }
