@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3 } from 'lucide-react';
+import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3, Search, Heart, LayoutGrid } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -54,7 +54,22 @@ const AdminDashboard: React.FC = () => {
     count: count as number
   })).sort((a, b) => b.count - a.count).slice(0, 5) : [];
 
-  const COLORS = ['#000000', '#EA580C', '#4B5563', '#9CA3AF', '#E5E7EB'];
+  const categoryData = stats?.categoryViews ? Object.entries(stats.categoryViews).map(([name, count]) => ({
+    name: name.replace(/_/g, ' '),
+    value: count as number
+  })).sort((a, b) => b.value - a.value) : [];
+
+  const searchData = stats?.searchQueries ? Object.entries(stats.searchQueries).map(([query, count]) => ({
+    query: query.replace(/_/g, ' '),
+    count: count as number
+  })).sort((a, b) => b.count - a.count).slice(0, 5) : [];
+
+  const saveData = stats?.eventSaves ? Object.entries(stats.eventSaves).map(([name, count]) => ({
+    name: name.replace(/_/g, ' '),
+    count: count as number
+  })).sort((a, b) => b.count - a.count).slice(0, 5) : [];
+
+  const COLORS = ['#000000', '#EA580C', '#4B5563', '#9CA3AF', '#E5E7EB', '#F97316', '#FB923C'];
 
   const handleSyncAll = async () => {
     setIsSyncing(true);
@@ -274,6 +289,116 @@ const AdminDashboard: React.FC = () => {
                   <Activity className="w-12 h-12 mb-4 opacity-20" />
                   <p className="text-[10px] font-black uppercase tracking-widest">No Signals Tracked Yet</p>
                 </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 mt-12">
+          {/* Category Popularity */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl shadow-black/5"
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
+                <LayoutGrid className="w-5 h-5 text-black" />
+              </div>
+              <h3 className="text-xl font-black uppercase italic tracking-tighter">Category Interest</h3>
+            </div>
+            
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              {categoryData.slice(0, 4).map((cat, i) => (
+                <div key={cat.name} className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                  <span className="text-[10px] font-black uppercase text-gray-400">{cat.name}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* Top Searches */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl shadow-black/5"
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
+                <Search className="w-5 h-5 text-black" />
+              </div>
+              <h3 className="text-xl font-black uppercase italic tracking-tighter">Query Intelligence</h3>
+            </div>
+
+            <div className="space-y-6">
+              {searchData.length > 0 ? searchData.map((search, i) => (
+                <div key={search.query} className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-black text-gray-300">#{i + 1}</span>
+                    <span className="text-xs font-black text-gray-900 uppercase tracking-tight italic">"{search.query}"</span>
+                  </div>
+                  <span className="text-xs font-black text-orange-600">{search.count}</span>
+                </div>
+              )) : (
+                <div className="h-40 flex items-center justify-center text-gray-300 text-[10px] font-black uppercase tracking-widest">No Queries Logged</div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Most Saved */}
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl shadow-black/5"
+          >
+            <div className="flex items-center gap-4 mb-8">
+              <div className="w-10 h-10 bg-gray-50 rounded-xl flex items-center justify-center">
+                <Heart className="w-5 h-5 text-black" />
+              </div>
+              <h3 className="text-xl font-black uppercase italic tracking-tighter">Vault Favorites</h3>
+            </div>
+
+            <div className="space-y-6">
+              {saveData.length > 0 ? saveData.map((save, i) => (
+                <div key={save.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center">
+                      <Zap className="w-3 h-3 text-white" />
+                    </div>
+                    <span className="text-xs font-black text-gray-900 uppercase tracking-tight line-clamp-1 max-w-[120px]">{save.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black text-gray-900">{save.count}</span>
+                    <Heart className="w-3 h-3 text-red-500 fill-red-500" />
+                  </div>
+                </div>
+              )) : (
+                <div className="h-40 flex items-center justify-center text-gray-300 text-[10px] font-black uppercase tracking-widest">No Signals Saved</div>
               )}
             </div>
           </motion.div>

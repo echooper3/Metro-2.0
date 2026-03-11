@@ -101,6 +101,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       else if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
       else if (err.code === 'auth/email-already-in-use') msg = "An account already exists with this email.";
       else if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      else if (err.code === 'auth/operation-not-allowed') msg = "Email/Password sign-in is not enabled. Please contact the administrator.";
+      else if (err.code === 'auth/invalid-email') msg = "Invalid email address format.";
+      else if (err.code === 'permission-denied') msg = "Database access denied. Please try again.";
+      else if (err.message) msg = err.message;
       setError(msg);
     } finally {
       setIsSubmitting(false);

@@ -84,7 +84,7 @@ const App: React.FC = () => {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   };
 
-  const trackView = useCallback(async (type: 'page' | 'city' | 'event', id?: string) => {
+  const trackView = useCallback(async (type: 'page' | 'city' | 'event' | 'category' | 'search' | 'save', id?: string) => {
     if (!isAuthReady) return;
     try {
       const statsRef = doc(db, 'stats', 'traffic');
@@ -98,15 +98,31 @@ const App: React.FC = () => {
       if (type === 'event' && id) {
         updateData[`eventViews.${id.replace(/\s+/g, '_')}`] = increment(1);
       }
+      if (type === 'category' && id) {
+        updateData[`categoryViews.${id.replace(/\s+/g, '_')}`] = increment(1);
+      }
+      if (type === 'search' && id) {
+        // Limit search query length and sanitize
+        const query = id.toLowerCase().trim().substring(0, 50).replace(/[.#$[\]]/g, '_');
+        if (query) updateData[`searchQueries.${query}`] = increment(1);
+      }
+      if (type === 'save' && id) {
+        updateData[`eventSaves.${id.replace(/\s+/g, '_')}`] = increment(1);
+      }
+      
       await updateDoc(statsRef, updateData).catch(async (err) => {
         // If doc doesn't exist, create it
         if (err.code === 'not-found') {
-          await setDoc(statsRef, {
+          const initialData: any = {
             totalViews: 1,
             cityViews: type === 'city' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
             eventViews: type === 'event' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
+            categoryViews: type === 'category' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
+            searchQueries: type === 'search' ? { [id!.toLowerCase().replace(/\s+/g, '_')]: 1 } : {},
+            eventSaves: type === 'save' ? { [id!.replace(/\s+/g, '_')]: 1 } : {},
             lastUpdated: serverTimestamp()
-          });
+          };
+          await setDoc(statsRef, initialData);
         }
       });
     } catch (e) {
@@ -132,6 +148,7 @@ const App: React.FC = () => {
     try {
       await updateDoc(doc(db, 'users', user.id), { savedEvents: nextSaved });
       setUser(prev => prev ? { ...prev, savedEvents: nextSaved } : null);
+      if (!isSaved) trackView('save', event.title);
       addToast(isSaved ? "Signal removed from vault" : "Signal secured in vault");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
@@ -305,8 +322,9 @@ const App: React.FC = () => {
       setActiveCategory(cat);
       setPage(1);
     });
+    trackView('category', cat);
     loadCityEvents(selectedCity?.name || 'All', { category: cat, keyword: searchQuery || undefined, page: 1 });
-  }, [selectedCity, searchQuery, loadCityEvents]);
+  }, [selectedCity, searchQuery, loadCityEvents, trackView]);
 
   const handleGlobalSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -314,6 +332,7 @@ const App: React.FC = () => {
     setSelectedCity(null);
     setActiveCategory('All');
     setPage(1);
+    trackView('search', query);
     const searchSeeds = GLOBAL_SEED_EVENTS.filter(e => e.title.toLowerCase().includes(query.toLowerCase()));
     setAllEvents(searchSeeds.length > 0 ? searchSeeds : []);
     window.scrollTo({ top: 0, behavior: 'smooth' });
