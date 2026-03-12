@@ -99,7 +99,7 @@ service cloud.firestore {
       allow read: if true; // Events are public
       allow create: if isAuthenticated() && isValidEvent(request.resource.data) && 
                     request.resource.data.userId == request.auth.uid &&
-                    request.resource.data.userCreated == true;
+                    (request.resource.data.userCreated == true || isAdmin());
       allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid && isValidEvent(request.resource.data) && request.resource.data.userId == resource.data.userId) || isAdmin();
       allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
     }

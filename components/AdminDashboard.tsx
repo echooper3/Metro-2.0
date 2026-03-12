@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3, Search, Heart, LayoutGrid } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { CITIES } from '../constants';
@@ -87,6 +87,7 @@ const AdminDashboard: React.FC = () => {
             await setDoc(eventRef, {
               ...event,
               id: eventRef.id,
+              userId: auth.currentUser?.uid || 'system',
               userCreated: false, // System created
               createdAt: serverTimestamp()
             });
