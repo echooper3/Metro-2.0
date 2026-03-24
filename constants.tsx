@@ -198,10 +198,10 @@ const REAL_SEED_EVENTS: Record<string, EventActivity[]> = {
 };
 
 export const SEED_EVENTS: Record<string, EventActivity[]> = {
-  tulsa: [],
-  okc: [],
-  dallas: [],
-  houston: [],
+  tulsa: [...REAL_SEED_EVENTS.tulsa, ...generateCitySeeds('Tulsa')],
+  okc: [...REAL_SEED_EVENTS.okc, ...generateCitySeeds('Oklahoma City')],
+  dallas: [...REAL_SEED_EVENTS.dallas, ...generateCitySeeds('Dallas')],
+  houston: [...REAL_SEED_EVENTS.houston, ...generateCitySeeds('Houston')],
 };
 
 export const GLOBAL_SEED_EVENTS: EventActivity[] = [

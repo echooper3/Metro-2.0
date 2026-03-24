@@ -237,7 +237,7 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
       return null;
     }
     console.error("Gemini Fetch Error:", error);
-    return null;
+    throw error; // Rethrow to allow UI to handle specific errors
   } finally {
     if (globalFetchController?.signal === signal) {
       globalFetchController = null;

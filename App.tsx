@@ -219,19 +219,25 @@ const App: React.FC = () => {
         if (isNextPage) {
           setHasMore(false);
         } else if (!result) {
-          // Only show toast if we have no data at all to show
+          // If we have no data at all, show a more descriptive error
           if (allEventsRef.current.length === 0) {
-            addToast("Metropolitan Sync failed. Showing local data.");
+            addToast("Metropolitan Sync failed. Please check your connection or try again later.");
           }
           setSourceStatus('seed');
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Metropolitan Sync failed:", err);
+      const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
+      
       if (allEventsRef.current.length === 0) {
-        addToast("Metropolitan Sync failed. Showing local data.");
+        if (isQuota) {
+          addToast("Metropolitan Signal is currently at capacity. Showing local data.");
+        } else {
+          addToast("Metropolitan Sync failed. Showing local data.");
+        }
       }
-      setSourceStatus('seed');
+      setSourceStatus(isQuota ? 'quota-limited' : 'seed');
     } finally {
       setIsRefreshing(false);
       setIsVerifying(false);
@@ -319,8 +325,9 @@ const App: React.FC = () => {
       setActiveCategory('All');
       setSearchQuery('');
       setPage(1);
-      // Don't clear allEvents immediately to avoid "Sync failed" toast if first sync fails
-      // Instead, we'll let loadCityEvents handle the state transition
+      // Set to city seeds immediately to avoid empty state and "Sync failed" toast
+      const seeds = SEED_EVENTS[city.id] || [];
+      setAllEvents(seeds);
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
@@ -356,7 +363,7 @@ const App: React.FC = () => {
   const handleHome = useCallback(() => {
     setView(AppView.LANDING);
     setSelectedCity(null);
-    setAllEvents([]);
+    setAllEvents(GLOBAL_SEED_EVENTS);
     setPage(1);
     setActiveCategory('All');
     setSearchQuery('');
