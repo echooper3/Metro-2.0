@@ -51,8 +51,9 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-          (request.auth.token.email == "donva.adkism@gmail.com" && request.auth.token.email_verified == true));
+        (request.auth.token.email == "donva.adkism@gmail.com" ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
     function isValidEmail(email) {
@@ -106,7 +107,7 @@ service cloud.firestore {
 
     match /stats/{statId} {
       allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow create: if isAuthenticated() && statId == 'traffic'; // Allow first user to initialize traffic stats
       allow update: if isAuthenticated(); // Allow users to increment traffic stats
     }
 

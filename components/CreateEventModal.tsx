@@ -39,7 +39,7 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
 const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId }) => {
   const [formData, setFormData] = useState<Partial<EventActivity>>({
     title: '', category: 'Community', description: '', location: '', venue: '',
-    date: new Date().toISOString().split('T')[0], time: '19:00', cityName: 'Tulsa',
+    date: new Date().toISOString().split('T')[0], time: '19:00', endTime: '21:00', cityName: 'Tulsa',
     price: '', ageRestriction: ''
   });
 
@@ -311,9 +311,16 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
               </div>
             </div>
             <div className="space-y-2">
-              <label className={labelClasses}>Time</label>
+              <label className={labelClasses}>Start Time</label>
               <div className="relative">
                 <input type="time" className={inputClasses} value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
+                <Clock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className={labelClasses}>End Time</label>
+              <div className="relative">
+                <input type="time" className={inputClasses} value={formData.endTime} onChange={e => setFormData({...formData, endTime: e.target.value})} />
                 <Clock className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300 pointer-events-none" />
               </div>
             </div>

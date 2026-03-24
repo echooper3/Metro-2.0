@@ -3,7 +3,7 @@ import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { EventActivity, GroundingSource, Category } from "../types";
 
 const CACHE_KEY_PREFIX = "itm_cache_v15_";
-const activeRequests = new Map<string, AbortController>();
+let globalFetchController: AbortController | null = null;
 
 const extractJson = (text: string) => {
   if (!text) return "[]";
@@ -69,6 +69,8 @@ export const getCachedData = (key: string) => {
   return cached ? cached.data : null;
 };
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean, signal?: AbortSignal) {
   const { category, keyword, page = 1 } = options;
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -121,52 +123,89 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
     config.tools = [{ googleSearch: {} }];
   }
 
-  const response = await ai.models.generateContent({
-    model: modelName,
-    contents: context,
-    config
-  });
+  let lastError: any = null;
+  const maxRetries = 5;
+  
+  for (let i = 0; i < maxRetries; i++) {
+    if (signal?.aborted) throw new Error('AbortError');
+    
+    try {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: context,
+        config
+      });
 
-  if (signal?.aborted) throw new Error('AbortError');
+      if (signal?.aborted) throw new Error('AbortError');
 
-  const rawEvents = JSON.parse(extractJson(response.text || "[]"));
-  const processedEvents: EventActivity[] = rawEvents.map((e: any, index: number) => ({
-    ...e,
-    id: `live-${Date.now()}-${index}-${page}`,
-    isLive: true,
-    isTrending: index < 2,
-    isVerified: useGrounding
-  }));
+      const rawEvents = JSON.parse(extractJson(response.text || "[]"));
+      const processedEvents: EventActivity[] = rawEvents.map((e: any, index: number) => ({
+        ...e,
+        id: `live-${Date.now()}-${index}-${page}`,
+        isLive: true,
+        isTrending: index < 2,
+        isVerified: useGrounding
+      }));
 
-  const sources: GroundingSource[] = [];
-  const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
-  if (groundingMetadata?.groundingChunks) {
-    groundingMetadata.groundingChunks.forEach((chunk: any) => {
-      if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri });
-    });
+      const sources: GroundingSource[] = [];
+      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+      if (groundingMetadata?.groundingChunks) {
+        groundingMetadata.groundingChunks.forEach((chunk: any) => {
+          if (chunk.web) sources.push({ title: chunk.web.title, uri: chunk.web.uri });
+        });
+      }
+
+      return { events: processedEvents, sources };
+    } catch (error: any) {
+      if (signal?.aborted || error.name === 'AbortError' || error.message === 'AbortError') {
+        throw new Error('AbortError');
+      }
+      
+      lastError = error;
+      const isQuotaError = error.message?.includes('429') || 
+                           error.message?.includes('RESOURCE_EXHAUSTED') ||
+                           error.status === 'RESOURCE_EXHAUSTED' ||
+                           error.code === 429;
+
+      if (isQuotaError && i < maxRetries - 1) {
+        // Exponential backoff with jitter: (2^i * 3000ms) + random(0-2000ms)
+        const waitTime = (Math.pow(2, i) * 3000) + (Math.random() * 2000);
+        console.warn(`Gemini Quota Exceeded. Retrying in ${Math.round(waitTime)}ms... (Attempt ${i + 1}/${maxRetries})`);
+        await delay(waitTime);
+        continue;
+      }
+      
+      // For other errors, retry at least once after a short delay
+      if (i < 1) {
+        await delay(1000);
+        continue;
+      }
+      
+      throw error;
+    }
   }
-
-  return { events: processedEvents, sources };
+  throw lastError;
 }
 
 export const fetchEvents = async (cityName: string | 'All', options: FetchOptions = {}) => {
   const cacheKey = getCacheKey(cityName, options);
   
-  if (activeRequests.has(cacheKey)) {
-    activeRequests.get(cacheKey)?.abort();
+  // Cancel ANY previous fetchEvents request to avoid overlapping quota usage
+  if (globalFetchController) {
+    globalFetchController.abort();
   }
-
-  const controller = new AbortController();
-  activeRequests.set(cacheKey, controller);
+  globalFetchController = new AbortController();
+  const signal = globalFetchController.signal;
 
   try {
     const useGrounding = !options.fastSync;
-    let result = await queryGemini(cityName, options, useGrounding, controller.signal);
+    let result = await queryGemini(cityName, options, useGrounding, signal);
     
     // Fallback: If grounding returned nothing, try without grounding
     if ((!result || result.events.length === 0) && useGrounding) {
+      if (signal.aborted) throw new Error('AbortError');
       console.warn("Grounding returned no events, falling back to AI generation.");
-      result = await queryGemini(cityName, { ...options, fastSync: true }, false, controller.signal);
+      result = await queryGemini(cityName, { ...options, fastSync: true }, false, signal);
     }
 
     if (!result) return null;
@@ -180,12 +219,18 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
       setPersistentCache(cacheKey, finalResult);
     }
     
-    activeRequests.delete(cacheKey);
     return finalResult;
   } catch (error: any) {
+    if (error.message === 'AbortError') {
+      // Silent ignore for intentional cancellations
+      return null;
+    }
     console.error("Gemini Fetch Error:", error);
-    activeRequests.delete(cacheKey);
     return null;
+  } finally {
+    if (globalFetchController?.signal === signal) {
+      globalFetchController = null;
+    }
   }
 };
 

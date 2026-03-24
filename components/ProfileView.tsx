@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserProfile, EventActivity, Category, AppView } from '../types';
 import { CATEGORIES, CITIES } from '../constants';
 import EventItem from './EventItem';
+import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, deleteDoc } from 'firebase/firestore';
@@ -192,260 +193,270 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Tab Content */}
       <AnimatePresence mode="wait">
         {activeTab === 'saved' && (
-          <motion.div
-            key="saved"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
-          >
-            {savedEvents.length > 0 ? (
-              savedEvents.map((event, i) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.05 }}
-                >
-                  <EventItem 
-                    event={event} 
-                    showCity={true} 
-                    onOpenDetails={onOpenEventDetails} 
-                    isSaved={true}
-                    onToggleSave={() => onToggleSave(event)}
-                  />
-                </motion.div>
-              ))
-            ) : (
-              <div className="col-span-full py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
-                <Heart className="w-16 h-16 text-gray-100 mx-auto mb-8" />
-                <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">No saved metropolitan signals yet</p>
-                <button className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Explore The Metro</button>
-              </div>
-            )}
-          </motion.div>
+          <ErrorBoundary>
+            <motion.div
+              key="saved"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
+            >
+              {savedEvents.length > 0 ? (
+                savedEvents.map((event, i) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                  >
+                    <EventItem 
+                      event={event} 
+                      showCity={true} 
+                      onOpenDetails={onOpenEventDetails} 
+                      isSaved={true}
+                      onToggleSave={() => onToggleSave(event)}
+                    />
+                  </motion.div>
+                ))
+              ) : (
+                <div className="col-span-full py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
+                  <Heart className="w-16 h-16 text-gray-100 mx-auto mb-8" />
+                  <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">No saved metropolitan signals yet</p>
+                  <button className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Explore The Metro</button>
+                </div>
+              )}
+            </motion.div>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'submissions' && (
-          <motion.div
-            key="submissions"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
-          >
-            {myEvents.length > 0 ? (
-              myEvents.map((event, i) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="relative group"
-                >
-                  <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
-                    className="absolute top-4 right-4 p-3 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-20"
-                    title="Delete Broadcast"
+          <ErrorBoundary>
+            <motion.div
+              key="submissions"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
+            >
+              {myEvents.length > 0 ? (
+                myEvents.map((event, i) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="relative group"
                   >
-                    <X className="w-4 h-4" />
-                  </button>
-                </motion.div>
-              ))
-            ) : (
-              <div className="col-span-full py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
-                <Zap className="w-16 h-16 text-gray-100 mx-auto mb-8" />
-                <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">You haven't broadcasted any signals yet</p>
-                <button onClick={onPostEvent} className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Broadcast Your First Event</button>
-              </div>
-            )}
-          </motion.div>
+                    <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
+                      className="absolute top-4 right-4 p-3 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-20"
+                      title="Delete Broadcast"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </motion.div>
+                ))
+              ) : (
+                <div className="col-span-full py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
+                  <Zap className="w-16 h-16 text-gray-100 mx-auto mb-8" />
+                  <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">You haven't broadcasted any signals yet</p>
+                  <button onClick={onPostEvent} className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Broadcast Your First Event</button>
+                </div>
+              )}
+            </motion.div>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'preferences' && (
-          <motion.div
-            key="preferences"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="space-y-12"
-          >
-            <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
-              <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter mb-10 flex items-center gap-4">
-                <MapPin className="w-6 h-6 text-orange-600" />
-                Primary Metropolitan Hub
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                {CITIES.map(city => (
-                  <button
-                    key={city.id}
-                    onClick={() => onUpdatePreferences({ ...user.preferences, favoriteCity: city.name })}
-                    className={`p-8 rounded-[2rem] border-2 transition-all text-center ${
-                      user.preferences.favoriteCity === city.name
-                        ? 'border-black bg-black text-white shadow-2xl'
-                        : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
-                    }`}
-                  >
-                    <span className="text-[10px] font-black uppercase tracking-widest">{city.name}</span>
-                  </button>
-                ))}
+          <ErrorBoundary>
+            <motion.div
+              key="preferences"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-12"
+            >
+              <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
+                <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter mb-10 flex items-center gap-4">
+                  <MapPin className="w-6 h-6 text-orange-600" />
+                  Primary Metropolitan Hub
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                  {CITIES.map(city => (
+                    <button
+                      key={city.id}
+                      onClick={() => onUpdatePreferences({ ...user.preferences, favoriteCity: city.name })}
+                      className={`p-8 rounded-[2rem] border-2 transition-all text-center ${
+                        user.preferences.favoriteCity === city.name
+                          ? 'border-black bg-black text-white shadow-2xl'
+                          : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
+                      }`}
+                    >
+                      <span className="text-[10px] font-black uppercase tracking-widest">{city.name}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
-              <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter mb-10 flex items-center gap-4">
-                <Tag className="w-6 h-6 text-orange-600" />
-                Intelligence Categories
-              </h3>
-              <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-8 ml-1">Select your primary intelligence streams for personalized signals</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                {CATEGORIES.filter(c => c !== 'All').map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => toggleCategory(cat)}
-                    className={`flex flex-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
-                      user.preferences.favoriteCategories.includes(cat)
-                        ? 'border-orange-600 bg-orange-50 text-orange-600 shadow-xl shadow-orange-600/10'
-                        : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
-                    }`}
-                  >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user.preferences.favoriteCategories.includes(cat) ? 'bg-orange-600 text-white' : 'bg-white text-gray-300'}`}>
-                      <Tag className="w-5 h-5" />
-                    </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-center">{cat}</span>
-                  </button>
-                ))}
+              <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
+                <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter mb-10 flex items-center gap-4">
+                  <Tag className="w-6 h-6 text-orange-600" />
+                  Intelligence Categories
+                </h3>
+                <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mb-8 ml-1">Select your primary intelligence streams for personalized signals</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                  {CATEGORIES.filter(c => c !== 'All').map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => toggleCategory(cat)}
+                      className={`flex flex-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
+                        user.preferences.favoriteCategories.includes(cat)
+                          ? 'border-orange-600 bg-orange-50 text-orange-600 shadow-xl shadow-orange-600/10'
+                          : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user.preferences.favoriteCategories.includes(cat) ? 'bg-orange-600 text-white' : 'bg-white text-gray-300'}`}>
+                        <Tag className="w-5 h-5" />
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-center">{cat}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </ErrorBoundary>
         )}
 
         {activeTab === 'settings' && (
-          <motion.div
-            key="settings"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
-          >
-            <div className="max-w-xl space-y-10">
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Display Name</label>
-                <input 
-                  type="text" 
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Email Address</label>
-                <input 
-                  type="email" 
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
-                  className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
-                />
-              </div>
-              <div className="pt-6">
-                <button 
-                  onClick={() => onUpdateProfile(editName, editEmail)}
-                  className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl"
-                >
-                  Update Account Data
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-        {activeTab === 'privacy' && (
-          <motion.div
-            key="privacy"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
-          >
-            <div className="max-w-4xl">
-              <div className="flex items-center gap-4 mb-12">
-                <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center">
-                  <Shield className="w-6 h-6 text-orange-600" />
+          <ErrorBoundary>
+            <motion.div
+              key="settings"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
+            >
+              <div className="max-w-xl space-y-10">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Display Name</label>
+                  <input 
+                    type="text" 
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
+                  />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Metropolitan Privacy Dashboard</h3>
-                  <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Monitor and manage your local intelligence footprint</p>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Email Address</label>
+                  <input 
+                    type="email" 
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
+                  />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
-                <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-6">
-                    <Database className="w-4 h-4 text-gray-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Local Cache Size</span>
-                  </div>
-                  <div className="text-4xl font-black text-gray-900 tracking-tighter">
-                    {(cacheItems.reduce((acc, curr) => acc + curr.size, 0) / 1024).toFixed(2)} <span className="text-lg text-gray-400">KB</span>
-                  </div>
-                </div>
-                <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-6">
-                    <Zap className="w-4 h-4 text-gray-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cached Signals</span>
-                  </div>
-                  <div className="text-4xl font-black text-gray-900 tracking-tighter">
-                    {cacheItems.length} <span className="text-lg text-gray-400">Entries</span>
-                  </div>
-                </div>
-                <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
-                  <div className="flex items-center gap-3 mb-6">
-                    <Eye className="w-4 h-4 text-gray-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tracking Status</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span className="text-lg font-black text-emerald-600 uppercase tracking-tight italic">Zero Trackers</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-8">
-                <div className="flex items-center justify-between pb-8 border-b border-gray-100">
-                  <div>
-                    <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Metropolitan Signal Cache</h4>
-                    <p className="text-xs text-gray-400 font-medium">Temporary storage for faster signal synchronization and offline access.</p>
-                  </div>
+                <div className="pt-6">
                   <button 
-                    onClick={clearCache}
-                    className="flex items-center gap-3 px-8 py-4 bg-red-50 text-red-600 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all"
+                    onClick={() => onUpdateProfile(editName, editEmail)}
+                    className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    Purge Cache
+                    Update Account Data
                   </button>
                 </div>
-
-                <div className="flex items-center justify-between pb-8 border-b border-gray-100">
-                  <div>
-                    <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Session Data Persistence</h4>
-                    <p className="text-xs text-gray-400 font-medium">Your profile and preferences are currently ephemeral and stored in memory only.</p>
+              </div>
+            </motion.div>
+          </ErrorBoundary>
+        )}
+        {activeTab === 'privacy' && (
+          <ErrorBoundary>
+            <motion.div
+              key="privacy"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
+            >
+              <div className="max-w-4xl">
+                <div className="flex items-center gap-4 mb-12">
+                  <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-orange-600" />
                   </div>
-                  <div className="px-6 py-3 bg-gray-100 text-gray-400 font-black rounded-xl text-[9px] uppercase tracking-widest">
-                    In-Memory Only
+                  <div>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Metropolitan Privacy Dashboard</h3>
+                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">Monitor and manage your local intelligence footprint</p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Third-Party Intelligence</h4>
-                    <p className="text-xs text-gray-400 font-medium">Signals are synchronized via Gemini AI. No PII is shared during synchronization.</p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
+                  <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Database className="w-4 h-4 text-gray-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Local Cache Size</span>
+                    </div>
+                    <div className="text-4xl font-black text-gray-900 tracking-tighter">
+                      {(cacheItems.reduce((acc, curr) => acc + curr.size, 0) / 1024).toFixed(2)} <span className="text-lg text-gray-400">KB</span>
+                    </div>
                   </div>
-                  <div className="px-6 py-3 bg-emerald-50 text-emerald-600 font-black rounded-xl text-[9px] uppercase tracking-widest">
-                    Verified Secure
+                  <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Zap className="w-4 h-4 text-gray-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cached Signals</span>
+                    </div>
+                    <div className="text-4xl font-black text-gray-900 tracking-tighter">
+                      {cacheItems.length} <span className="text-lg text-gray-400">Entries</span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Eye className="w-4 h-4 text-gray-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tracking Status</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-lg font-black text-emerald-600 uppercase tracking-tight italic">Zero Trackers</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-8">
+                  <div className="flex items-center justify-between pb-8 border-b border-gray-100">
+                    <div>
+                      <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Metropolitan Signal Cache</h4>
+                      <p className="text-xs text-gray-400 font-medium">Temporary storage for faster signal synchronization and offline access.</p>
+                    </div>
+                    <button 
+                      onClick={clearCache}
+                      className="flex items-center gap-3 px-8 py-4 bg-red-50 text-red-600 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Purge Cache
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between pb-8 border-b border-gray-100">
+                    <div>
+                      <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Session Data Persistence</h4>
+                      <p className="text-xs text-gray-400 font-medium">Your profile and preferences are currently ephemeral and stored in memory only.</p>
+                    </div>
+                    <div className="px-6 py-3 bg-gray-100 text-gray-400 font-black rounded-xl text-[9px] uppercase tracking-widest">
+                      In-Memory Only
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-gray-900 uppercase tracking-tight mb-1">Third-Party Intelligence</h4>
+                      <p className="text-xs text-gray-400 font-medium">Signals are synchronized via Gemini AI. No PII is shared during synchronization.</p>
+                    </div>
+                    <div className="px-6 py-3 bg-emerald-50 text-emerald-600 font-black rounded-xl text-[9px] uppercase tracking-widest">
+                      Verified Secure
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          </ErrorBoundary>
         )}
       </AnimatePresence>
     </div>

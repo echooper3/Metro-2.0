@@ -24,7 +24,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
     return 'bg-gray-50 text-gray-600 border-gray-100';
   };
 
-  const formatFriendlyDate = (dateStr?: string, timeStr?: string) => {
+  const formatFriendlyDate = (dateStr?: string, timeStr?: string, endTimeStr?: string) => {
     if (!dateStr) return null;
     try {
       let cleanDate = dateStr;
@@ -44,7 +44,15 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
         today.setHours(0, 0, 0, 0);
         const isToday = eventDate.getTime() === today.getTime();
         const datePrefix = isToday ? 'Today' : eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        return timeStr ? `${datePrefix} @ ${timeStr}` : datePrefix;
+        
+        let timeDisplay = timeStr || '';
+        if (timeStr && endTimeStr) {
+          timeDisplay = `${timeStr} - ${endTimeStr}`;
+        } else if (timeStr) {
+          timeDisplay = timeStr;
+        }
+        
+        return timeDisplay ? `${datePrefix} @ ${timeDisplay}` : datePrefix;
       }
       return dateStr;
     } catch (e) { return dateStr; }
@@ -114,7 +122,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
         <div className="flex items-center space-x-2 mb-4">
           <Calendar className="w-4 h-4 text-orange-600" />
           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-600">
-            {formatFriendlyDate(event.date, event.time)}
+            {formatFriendlyDate(event.date, event.time, event.endTime)}
           </span>
         </div>
 

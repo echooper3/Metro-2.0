@@ -24,17 +24,22 @@ const AdminDashboard: React.FC = () => {
       }
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'stats/traffic');
+      console.error('Firestore onSnapshot Error [stats/traffic]:', error);
+      setLoading(false);
     });
 
     // Fetch user count
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       setUserCount(snapshot.size);
+    }, (error) => {
+      console.error('Firestore onSnapshot Error [users]:', error);
     });
 
     // Fetch event count
     const unsubscribeEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
       setEventCount(snapshot.size);
+    }, (error) => {
+      console.error('Firestore onSnapshot Error [events]:', error);
     });
 
     return () => {

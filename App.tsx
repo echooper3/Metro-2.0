@@ -219,13 +219,19 @@ const App: React.FC = () => {
         if (isNextPage) {
           setHasMore(false);
         } else if (!result) {
-          addToast("Metropolitan Sync failed. Showing local data.");
+          // Only show toast if we have no data at all to show
+          if (allEventsRef.current.length === 0) {
+            addToast("Metropolitan Sync failed. Showing local data.");
+          }
           setSourceStatus('seed');
         }
       }
     } catch (err) {
-      console.warn("Metropolitan Sync failed.");
-      addToast("Metropolitan Sync failed. Showing local data.");
+      console.warn("Metropolitan Sync failed:", err);
+      if (allEventsRef.current.length === 0) {
+        addToast("Metropolitan Sync failed. Showing local data.");
+      }
+      setSourceStatus('seed');
     } finally {
       setIsRefreshing(false);
       setIsVerifying(false);
@@ -246,6 +252,7 @@ const App: React.FC = () => {
 
     // Test Firestore Connection
     const testConnection = async () => {
+      if (!isAuthReady) return;
       try {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error) {
@@ -255,7 +262,7 @@ const App: React.FC = () => {
       }
     };
     testConnection();
-  }, [updateWeather, loadCityEvents]);
+  }, [updateWeather, loadCityEvents, isAuthReady]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -292,15 +299,18 @@ const App: React.FC = () => {
 
   // Firestore Events Sync
   useEffect(() => {
+    if (!isAuthReady) return;
+
     const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const events = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as EventActivity));
       setDbEvents(events);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'events');
+      // Don't throw in onSnapshot to avoid crashing the SDK internal state
+      console.error('Firestore onSnapshot Error [events]:', error);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isAuthReady]);
 
   const handleCitySelect = useCallback((city: City) => {
     startTransition(() => {
@@ -790,7 +800,9 @@ const App: React.FC = () => {
                         <Clock className="w-5 h-5 text-black mr-3 mt-1" />
                         <div>
                           <p className="font-black text-gray-900 text-lg leading-tight">{detailedEvent.date}</p>
-                          <p className="text-sm text-gray-500 font-medium mt-1">{detailedEvent.time}</p>
+                          <p className="text-sm text-gray-500 font-medium mt-1">
+                            {detailedEvent.time}{detailedEvent.endTime ? ` - ${detailedEvent.endTime}` : ''}
+                          </p>
                         </div>
                       </div>
                     </div>
