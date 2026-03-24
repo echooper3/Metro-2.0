@@ -319,7 +319,8 @@ const App: React.FC = () => {
       setActiveCategory('All');
       setSearchQuery('');
       setPage(1);
-      setAllEvents([]);
+      // Don't clear allEvents immediately to avoid "Sync failed" toast if first sync fails
+      // Instead, we'll let loadCityEvents handle the state transition
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
@@ -344,7 +345,10 @@ const App: React.FC = () => {
     setPage(1);
     trackView('search', query);
     const searchSeeds = GLOBAL_SEED_EVENTS.filter(e => e.title.toLowerCase().includes(query.toLowerCase()));
-    setAllEvents(searchSeeds.length > 0 ? searchSeeds : []);
+    // If we have seeds, show them immediately
+    if (searchSeeds.length > 0) {
+      setAllEvents(searchSeeds);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     loadCityEvents('All', { keyword: query, category: 'All', page: 1 });
   }, [loadCityEvents]);

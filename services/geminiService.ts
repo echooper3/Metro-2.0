@@ -91,7 +91,7 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
 
   const config: any = {
     responseMimeType: "application/json",
-    systemInstruction: "JSON ARRAY ONLY. No markdown. No text outside array. Valid JSON. Identify age restrictions (e.g., 21+, All Ages) and extract event organizer name, website, and contact info. Ensure events are REAL and upcoming.",
+    systemInstruction: "JSON ARRAY ONLY. Valid JSON. Identify age restrictions and extract event organizer info. Ensure events are REAL and upcoming.",
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -109,10 +109,10 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
           imageUrl: { type: Type.STRING },
           price: { type: Type.STRING },
           isFree: { type: Type.BOOLEAN },
-          ageRestriction: { type: Type.STRING, description: "Age requirement for the event, e.g., 21+, 18+, All Ages" },
-          organizerName: { type: Type.STRING, description: "Name of the host or organization" },
-          organizerUrl: { type: Type.STRING, description: "Official website of the organizer" },
-          organizerContact: { type: Type.STRING, description: "Email or phone for the organizer" }
+          ageRestriction: { type: Type.STRING },
+          organizerName: { type: Type.STRING },
+          organizerUrl: { type: Type.STRING },
+          organizerContact: { type: Type.STRING }
         },
         required: ["title", "category", "description", "date", "cityName", "venue"]
       }
@@ -130,9 +130,14 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
     if (signal?.aborted) throw new Error('AbortError');
     
     try {
+      // If we're on the last retry, simplify the prompt significantly
+      const finalContext = i === maxRetries - 1 ? 
+        `List 5 real upcoming events in ${cityName === 'All' ? 'Tulsa/OKC/Dallas/Houston' : cityName}. JSON ONLY.` : 
+        context;
+
       const response = await ai.models.generateContent({
         model: modelName,
-        contents: context,
+        contents: finalContext,
         config
       });
 
@@ -179,6 +184,12 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
       if (i < 1) {
         await delay(1000);
         continue;
+      }
+      
+      // If we're on the last retry, try without grounding as a last resort
+      if (i === maxRetries - 2 && useGrounding) {
+        console.warn("Last retry: falling back to non-grounding.");
+        return queryGemini(cityName, { ...options, fastSync: true }, false, signal);
       }
       
       throw error;
