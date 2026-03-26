@@ -10,6 +10,7 @@ interface LayoutProps {
   onProfile: () => void;
   onAdmin?: () => void;
   onPostEvent: () => void;
+  onCitySelect?: (cityName: string) => void;
   isLoggedIn?: boolean;
   isAdmin?: boolean;
   userAvatar?: string;
@@ -47,7 +48,7 @@ const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
   );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onAdmin, onPostEvent, isLoggedIn, isAdmin, userAvatar, weather }) => {
+const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onAdmin, onPostEvent, onCitySelect, isLoggedIn, isAdmin, userAvatar, weather }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
@@ -189,18 +190,20 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
             <div className="md:col-span-3">
               <h3 className="text-white font-black mb-10 uppercase tracking-[0.4em] text-[10px]">Active Hubs</h3>
               <ul className="space-y-6 text-[11px] font-black uppercase tracking-[0.2em] text-white/40">
-                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
-                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Tulsa, OK
-                </li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
-                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Oklahoma City, OK
-                </li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
-                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Dallas, TX
-                </li>
-                <li className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group">
-                  <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> Houston, TX
-                </li>
+                {[
+                  { name: 'Tulsa', state: 'OK' },
+                  { name: 'Oklahoma City', state: 'OK' },
+                  { name: 'Dallas', state: 'TX' },
+                  { name: 'Houston', state: 'TX' }
+                ].map(city => (
+                  <li 
+                    key={city.name}
+                    onClick={() => onCitySelect?.(city.name)}
+                    className="hover:text-orange-500 cursor-pointer transition-colors flex items-center group"
+                  >
+                    <MapPin className="w-4 h-4 mr-3 group-hover:text-orange-500" /> {city.name}, {city.state}
+                  </li>
+                ))}
               </ul>
             </div>
 
