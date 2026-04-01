@@ -55,6 +55,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'preferences' | 'settings' | 'privacy'>('saved');
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
+  const [isEditing, setIsEditing] = useState(false);
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
   const [apiStatus, setApiStatus] = useState<{ ticketmaster: boolean, gemini: boolean }>({ ticketmaster: false, gemini: false });
@@ -73,6 +74,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     };
     fetchApiStatus();
   }, []);
+
+  React.useEffect(() => {
+    setEditName(user.name);
+    setEditEmail(user.email);
+  }, [user.name, user.email]);
 
   React.useEffect(() => {
     if (activeTab === 'privacy') {
@@ -145,35 +151,110 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
 
           <div className="flex-1 text-center md:text-left">
-            <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-full mb-4">
-              <Shield className="w-3 h-3 text-orange-600" />
-              <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Member</span>
-            </div>
-            <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic leading-none mb-4">
-              {user.name}
-            </h2>
-            <div className="flex flex-wrap justify-center md:justify-start gap-6 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4" />
-                {user.email}
+            <div className="flex flex-wrap justify-center md:justify-start gap-3 mb-4">
+              <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-full">
+                <Shield className="w-3 h-3 text-orange-600" />
+                <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Member</span>
               </div>
-              <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                {user.preferences.favoriteCity || 'No Primary Hub'}
+              <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full ${apiStatus.gemini && apiStatus.ticketmaster ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+                <Zap className={`w-3 h-3 ${apiStatus.gemini && apiStatus.ticketmaster ? 'text-emerald-600' : 'text-orange-600'}`} />
+                <span className="font-black uppercase tracking-[0.3em] text-[9px]">
+                  Signals: {apiStatus.gemini && apiStatus.ticketmaster ? 'Optimal' : 'Limited'}
+                </span>
               </div>
             </div>
+            
+            {isEditing ? (
+              <div className="space-y-4 mb-4">
+                <input 
+                  type="text" 
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="text-4xl md:text-6xl font-black text-gray-900 tracking-tighter uppercase italic leading-none bg-gray-50 border-b-4 border-black outline-none w-full max-w-xl"
+                  placeholder="Display Name"
+                  autoFocus
+                />
+                <div className="flex items-center gap-3">
+                  <Mail className="w-4 h-4 text-gray-400" />
+                  <input 
+                    type="email" 
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="text-lg font-bold text-gray-400 tracking-widest uppercase bg-gray-50 border-b-2 border-gray-200 outline-none w-full max-w-md"
+                    placeholder="Email Address"
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic leading-none mb-4">
+                  {user.name}
+                </h2>
+                <div className="flex flex-wrap justify-center md:justify-start gap-6 text-gray-400 font-bold uppercase tracking-widest text-[10px]">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-4 h-4" />
+                    {user.email}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-4 h-4" />
+                    {user.preferences.favoriteCity || 'No Primary Hub'}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="flex gap-4">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onPostEvent}
-              className="px-8 py-5 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Submit Event
-            </motion.button>
+            {isEditing ? (
+              <>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    onUpdateProfile(editName, editEmail);
+                    setIsEditing(false);
+                  }}
+                  className="px-8 py-5 bg-orange-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Save Changes
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    setEditName(user.name);
+                    setEditEmail(user.email);
+                    setIsEditing(false);
+                  }}
+                  className="px-8 py-5 bg-gray-100 text-gray-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3"
+                >
+                  <X className="w-4 h-4" />
+                  Cancel
+                </motion.button>
+              </>
+            ) : (
+              <>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsEditing(true)}
+                  className="px-8 py-5 bg-gray-50 text-gray-900 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-sm flex items-center gap-3 border border-gray-100 hover:border-black transition-all"
+                >
+                  <Settings className="w-4 h-4" />
+                  Edit Profile
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={onPostEvent}
+                  className="px-8 py-5 bg-black text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  Submit Event
+                </motion.button>
+              </>
+            )}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -408,7 +489,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
                   <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
                     <div className="flex items-center gap-3 mb-6">
                       <Database className="w-4 h-4 text-gray-400" />
@@ -436,6 +517,18 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className={`w-2 h-2 rounded-full ${apiStatus.ticketmaster ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
                       <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.ticketmaster ? 'text-emerald-600' : 'text-red-600'}`}>
                         {apiStatus.ticketmaster ? 'Configured' : 'Missing'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Sparkles className="w-4 h-4 text-gray-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Gemini Intelligence</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
+                      <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.gemini ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {apiStatus.gemini ? 'Operational' : 'Offline'}
                       </span>
                     </div>
                   </div>

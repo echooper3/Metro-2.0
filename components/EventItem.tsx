@@ -58,6 +58,15 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
     } catch (e) { return dateStr; }
   };
 
+  const getSourceInfo = (event: EventActivity) => {
+    if (event.userCreated) return { label: 'User Submitted', color: 'bg-emerald-600 text-white' };
+    if (event.id.startsWith('tm-')) return { label: 'Ticketmaster', color: 'bg-blue-600 text-white' };
+    if (event.id.startsWith('live-')) return { label: 'Gemini AI', color: 'bg-purple-600 text-white' };
+    return { label: 'Metropolitan Base', color: 'bg-gray-900 text-white' };
+  };
+
+  const source = getSourceInfo(event);
+
   return (
     <motion.div 
       whileHover={{ y: -8 }}
@@ -98,6 +107,9 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
         <div className="absolute top-6 left-6 flex flex-wrap gap-2">
           <span className={`px-4 py-2 rounded-2xl text-[9px] font-black uppercase tracking-widest border backdrop-blur-md ${getCategoryColor(event.category)}`}>
             {event.category}
+          </span>
+          <span className={`px-4 py-2 rounded-2xl text-[9px] font-black uppercase tracking-widest shadow-lg ${source.color}`}>
+            {source.label}
           </span>
           {event.isTrending && (
             <span className="px-4 py-2 bg-black text-white rounded-2xl text-[9px] font-black uppercase tracking-widest flex items-center shadow-lg">
