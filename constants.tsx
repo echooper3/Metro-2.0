@@ -47,8 +47,8 @@ const generateCitySeeds = (city: string): EventActivity[] => {
   const categories: Category[] = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
   
   categories.forEach((cat, idx) => {
-    // Skip Tulsa Sports, Family Activities, Visitor Attractions, Food & Drink, Night Life, Arts & Culture, Outdoors, and Community Showcase series as requested
-    if (city === 'Tulsa' && (cat === 'Sports' || cat === 'Family Activities' || cat === 'Visitor Attractions' || cat === 'Food & Drink' || cat === 'Night Life' || cat === 'Arts & Culture' || cat === 'Outdoors' || cat === 'Community')) return;
+    // Skip Tulsa Sports, Family Activities, Entertainment, Visitor Attractions, Food & Drink, Night Life, Arts & Culture, Outdoors, and Community Showcase series as requested
+    if (city === 'Tulsa' && (cat === 'Sports' || cat === 'Family Activities' || cat === 'Entertainment' || cat === 'Visitor Attractions' || cat === 'Food & Drink' || cat === 'Night Life' || cat === 'Arts & Culture' || cat === 'Outdoors' || cat === 'Community')) return;
 
     [0, 2, 7, 30].forEach((days, dIdx) => {
       const daysOffset = days + idx;
