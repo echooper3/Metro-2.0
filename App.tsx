@@ -793,6 +793,7 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <CreateEventModal 
             userId={user?.id}
+            defaultCity={user?.preferences.favoriteCity || selectedCity?.name || 'Tulsa'}
             onClose={() => setShowCreateModal(false)} 
             onSave={ev => { addToast("Event published successfully."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} 
           />

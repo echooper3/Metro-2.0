@@ -168,6 +168,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               <div className="space-y-4 mb-4">
                 <input 
                   type="text" 
+                  maxLength={90}
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   className="text-4xl md:text-6xl font-black text-gray-900 tracking-tighter uppercase italic leading-none bg-gray-50 border-b-4 border-black outline-none w-full max-w-xl"
@@ -443,6 +444,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Display Name</label>
                   <input 
                     type="text" 
+                    maxLength={90}
                     value={editName}
                     onChange={(e) => setEditName(e.target.value)}
                     className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"

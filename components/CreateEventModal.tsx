@@ -12,6 +12,7 @@ interface CreateEventModalProps {
   onClose: () => void;
   onSave: (event: EventActivity) => void;
   userId?: string;
+  defaultCity?: string;
 }
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -36,10 +37,10 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
   });
 };
 
-const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId }) => {
+const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity }) => {
   const [formData, setFormData] = useState<Partial<EventActivity>>({
     title: '', category: 'Community', description: '', location: '', venue: '',
-    date: new Date().toISOString().split('T')[0], time: '19:00', endTime: '21:00', cityName: 'Tulsa',
+    date: new Date().toISOString().split('T')[0], time: '19:00', endTime: '21:00', cityName: defaultCity || 'Tulsa',
     price: '', ageRestriction: ''
   });
 
@@ -80,12 +81,15 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
   }, [addressInput]);
 
   const handleSelectSuggestion = (s: LocationSuggestion) => {
+    const matchedCity = CITIES.find(c => s.city.toLowerCase().includes(c.name.toLowerCase()) || s.address.toLowerCase().includes(c.name.toLowerCase()));
+    
     setFormData(prev => ({ 
       ...prev, 
       venue: s.name, 
       location: s.address, 
       lat: s.lat, 
-      lng: s.lng 
+      lng: s.lng,
+      cityName: matchedCity ? matchedCity.name : prev.cityName
     }));
     setAddressInput(s.address);
     setShowSuggestions(false);
@@ -95,14 +99,17 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     setIsLocating(true);
     try {
       const pos = await getCurrentPosition();
-      const address = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-      if (address) {
-        setAddressInput(address);
+      const result = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
+      if (result) {
+        const matchedCity = CITIES.find(c => result.city.toLowerCase().includes(c.name.toLowerCase()) || result.address.toLowerCase().includes(c.name.toLowerCase()));
+        
+        setAddressInput(result.address);
         setFormData(prev => ({
           ...prev,
-          location: address,
+          location: result.address,
           lat: pos.coords.latitude,
-          lng: pos.coords.longitude
+          lng: pos.coords.longitude,
+          cityName: matchedCity ? matchedCity.name : prev.cityName
         }));
       }
     } catch (e) {
@@ -228,7 +235,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
 
           <div className="space-y-2">
             <label className={labelClasses}>Event Title</label>
-            <input required type="text" className={inputClasses} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Give your event a bold name" />
+            <input required type="text" maxLength={140} className={inputClasses} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Give your event a bold name" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -340,6 +347,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
           <div className="space-y-2">
             <label className={labelClasses}>Description</label>
             <textarea 
+              maxLength={2800}
               className={`${inputClasses} h-32 resize-none py-6`} 
               value={formData.description} 
               onChange={e => setFormData({...formData, description: e.target.value})} 

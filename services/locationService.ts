@@ -2,6 +2,7 @@
 export interface LocationSuggestion {
   name: string;
   address: string;
+  city: string;
   lat: number;
   lng: number;
   type: 'venue' | 'address' | 'city';
@@ -33,6 +34,7 @@ export const fetchAddressSuggestions = async (query: string): Promise<LocationSu
     return data.map((item: any) => ({
       name: item.display_name.split(',')[0],
       address: item.display_name,
+      city: item.address.city || item.address.town || item.address.village || item.address.suburb || '',
       lat: parseFloat(item.lat),
       lng: parseFloat(item.lon),
       type: item.type === 'city' ? 'city' : (item.class === 'building' ? 'venue' : 'address')
@@ -44,17 +46,18 @@ export const fetchAddressSuggestions = async (query: string): Promise<LocationSu
 };
 
 /**
- * Reverse geocode coordinates to get a readable address.
+ * Reverse geocode coordinates to get a readable address and city.
  */
-export const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+export const reverseGeocode = async (lat: number, lng: number): Promise<{ address: string, city: string } | null> => {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'InsideTheMetro-EventApp' }
     });
     if (!response.ok) return null;
     const data = await response.json();
-    return data.display_name;
+    const city = data.address.city || data.address.town || data.address.village || data.address.suburb || '';
+    return { address: data.display_name, city };
   } catch (error) {
     return null;
   }

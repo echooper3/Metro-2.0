@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "bulk-upload": "tsx scripts/bulk-upload.ts",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
@@ -16,6 +17,7 @@
     "clsx": "^2.1.1",
     "express": "^5.2.1",
     "firebase": "^12.10.0",
+    "firebase-admin": "^13.7.0",
     "lucide-react": "^0.577.0",
     "motion": "^12.35.1",
     "react": "^19.2.3",
