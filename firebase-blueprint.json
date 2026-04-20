@@ -13,6 +13,13 @@
         "birthday": { "type": "string" },
         "zipCode": { "type": "string" },
         "savedEvents": { "type": "array", "items": { "type": "string" } },
+        "syncStats": {
+          "type": "object",
+          "properties": {
+            "lastSyncAt": { "type": "string", "format": "date-time" },
+            "totalSyncs": { "type": "number" }
+          }
+        },
         "preferences": {
           "type": "object",
           "properties": {

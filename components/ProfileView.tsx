@@ -5,7 +5,7 @@ import EventItem from './EventItem';
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, deleteDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import bulkEvents from '../src/data/events.json';
 import { 
   User, 
@@ -223,7 +223,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => {
-                    onUpdateProfile(editName, editEmail);
+                    onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode);
                     setIsEditing(false);
                   }}
                   className="px-8 py-5 bg-orange-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
@@ -725,7 +725,18 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                               console.error("Sync failed for event:", event.title, err);
                             }
                           }
-                          alert(`Successfully synchronized ${count} metropolitan signals.`);
+                          
+                          // Update User Sync Stats
+                          try {
+                            await updateDoc(doc(db, 'users', user.id), {
+                              "syncStats.lastSyncAt": new Date().toISOString(),
+                              "syncStats.totalSyncs": increment(1)
+                            });
+                          } catch (err) {
+                            console.error("Failed to update user sync stats:", err);
+                          }
+
+                          alert(`Successfully synchronized ${count} metropolitan signals. Sync credentials updated in your Auth profile.`);
                           if (btn) btn.innerText = 'Sync Intelligence Now';
                         }
                       }}
@@ -757,6 +768,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                           <span className="text-sm font-black text-gray-900 uppercase italic">Firebase Identity</span>
                         </div>
                       </div>
+                      
+                      {user.syncStats && (
+                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
+                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-600 block mb-2">Sync Intelligence Status</span>
+                          <div className="space-y-1">
+                            <p className="text-[10px] font-black text-gray-900 uppercase">Last Sync: <span className="text-orange-600">{user.syncStats.lastSyncAt ? new Date(user.syncStats.lastSyncAt).toLocaleString() : 'Never'}</span></p>
+                            <p className="text-[10px] font-black text-gray-900 uppercase">Total Operations: <span className="text-orange-600">{user.syncStats.totalSyncs || 0}</span></p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

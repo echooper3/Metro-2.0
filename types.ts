@@ -66,6 +66,10 @@ export interface UserProfile {
   birthday?: string;
   zipCode?: string;
   savedEvents: string[]; // Array of event IDs
+  syncStats?: {
+    lastSyncAt?: string;
+    totalSyncs?: number;
+  };
   preferences: {
     favoriteCity?: string;
     favoriteCategories: Category[];

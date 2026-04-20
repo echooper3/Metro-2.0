@@ -2,13 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3, Search, Heart, LayoutGrid } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+import { UserProfile } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { CITIES } from '../constants';
 import { fetchEvents } from '../services/geminiService';
 import { RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const AdminDashboard: React.FC = () => {
+interface AdminDashboardProps {
+  user: UserProfile;
+  onUpdateSyncStats: (lastSyncAt: string, totalSyncs: number) => void;
+}
+
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats }) => {
   const [stats, setStats] = useState<any>(null);
   const [userCount, setUserCount] = useState(0);
   const [eventCount, setEventCount] = useState(0);
@@ -99,6 +105,21 @@ const AdminDashboard: React.FC = () => {
           }
         }
       }
+      
+      // Update User Auth Sync Stats
+      const syncTime = new Date().toISOString();
+      const totalSyncs = (user.syncStats?.totalSyncs || 0) + 1;
+      
+      try {
+        await updateDoc(doc(db, 'users', user.id), {
+          "syncStats.lastSyncAt": syncTime,
+          "syncStats.totalSyncs": increment(1)
+        });
+        onUpdateSyncStats(syncTime, totalSyncs);
+      } catch (err) {
+        console.error("Failed to update admin sync stats:", err);
+      }
+
       setSyncStatus('Global Sync Complete');
       setTimeout(() => setSyncStatus(''), 5000);
     } catch (e) {

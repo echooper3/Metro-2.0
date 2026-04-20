@@ -788,9 +788,9 @@ const App: React.FC = () => {
         </Suspense>
       )}
 
-      {view === AppView.ADMIN && isAdmin && (
+      {view === AppView.ADMIN && isAdmin && user && (
         <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
-          <AdminDashboard />
+          <AdminDashboard user={user} onUpdateSyncStats={(lastSyncAt, totalSyncs) => setUser(prev => prev ? { ...prev, syncStats: { lastSyncAt, totalSyncs } } : null)} />
         </Suspense>
       )}
 
