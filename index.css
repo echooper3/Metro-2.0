@@ -34,6 +34,12 @@
   @apply border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)];
 }
 
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .hero-gradient {
   background: radial-gradient(circle at 50% 0%, rgba(249, 115, 22, 0.1) 0%, transparent 70%);
 }

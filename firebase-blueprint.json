@@ -9,6 +9,9 @@
         "name": { "type": "string" },
         "email": { "type": "string" },
         "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "birthday": { "type": "string" },
+        "zipCode": { "type": "string" },
         "savedEvents": { "type": "array", "items": { "type": "string" } },
         "preferences": {
           "type": "object",

@@ -226,7 +226,7 @@ const App: React.FC = () => {
     if (!isNextPage) {
       setIsRefreshing(true);
       setHasMore(true);
-      if (!cached && allEvents.length === 0) setAllEvents([]); 
+      if (!cached) setAllEvents([]); 
     } else {
       setIsPageLoading(true);
     }
@@ -320,6 +320,9 @@ const App: React.FC = () => {
               name: firebaseUser.displayName || 'Metropolitan Member',
               email: firebaseUser.email || '',
               avatar: firebaseUser.photoURL || undefined,
+              phone: '',
+              birthday: '',
+              zipCode: '',
               savedEvents: [],
               preferences: { favoriteCategories: [] }
             };
@@ -462,11 +465,12 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  const handleUpdateProfile = useCallback(async (name: string, email: string) => {
+  const handleUpdateProfile = useCallback(async (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => {
     if (!user) return;
     try {
-      await updateDoc(doc(db, 'users', user.id), { name, email });
-      setUser(prev => prev ? { ...prev, name, email } : null);
+      const updates = { name, email, phone, birthday, zipCode };
+      await updateDoc(doc(db, 'users', user.id), updates);
+      setUser(prev => prev ? { ...prev, ...updates } : null);
       addToast("Metropolitan profile updated");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
@@ -779,6 +783,7 @@ const App: React.FC = () => {
             onToggleSave={handleToggleSave}
             onDeleteEvent={handleDeleteEvent}
             onUpdateProfile={handleUpdateProfile}
+            isAdmin={isAdmin}
           />
         </Suspense>
       )}

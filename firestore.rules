@@ -13,6 +13,9 @@ service cloud.firestore {
     //   - name: string (required)
     //   - email: string (required)
     //   - avatar: string (optional)
+    //   - phone: string (optional)
+    //   - birthday: string (optional)
+    //   - zipCode: string (optional)
     //   - savedEvents: list (required)
     //   - preferences: map (required)
     //
@@ -72,7 +75,10 @@ service cloud.firestore {
       return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.email is string && isValidEmail(data.email) &&
              data.savedEvents is list &&
-             data.preferences is map;
+             data.preferences is map &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
+             (!('birthday' in data) || (data.birthday is string && data.birthday.size() < 20)) &&
+             (!('zipCode' in data) || (data.zipCode is string && data.zipCode.size() < 20));
     }
 
     function isValidEvent(data) {

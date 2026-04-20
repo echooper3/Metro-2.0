@@ -62,6 +62,9 @@ export interface UserProfile {
   name: string;
   email: string;
   avatar?: string;
+  phone?: string;
+  birthday?: string;
+  zipCode?: string;
   savedEvents: string[]; // Array of event IDs
   preferences: {
     favoriteCity?: string;

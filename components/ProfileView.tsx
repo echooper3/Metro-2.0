@@ -5,7 +5,8 @@ import EventItem from './EventItem';
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, deleteDoc } from 'firebase/firestore';
+import { doc, deleteDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import bulkEvents from '../src/data/events.json';
 import { 
   User, 
   Settings, 
@@ -24,7 +25,9 @@ import {
   Trash2,
   Database,
   Lock,
-  Eye
+  Eye,
+  RefreshCw,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ProfileViewProps {
@@ -37,7 +40,8 @@ interface ProfileViewProps {
   onPostEvent: () => void;
   onToggleSave: (event: EventActivity) => void;
   onDeleteEvent: (event: EventActivity) => void;
-  onUpdateProfile: (name: string, email: string) => void;
+  onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => void;
+  isAdmin?: boolean;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ 
@@ -50,11 +54,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onPostEvent,
   onToggleSave,
   onDeleteEvent,
-  onUpdateProfile
+  onUpdateProfile,
+  isAdmin
 }) => {
-  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'preferences' | 'settings' | 'privacy'>('saved');
+  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'preferences' | 'settings' | 'privacy' | 'admin'>('saved');
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
+  const [editPhone, setEditPhone] = useState(user.phone || '');
+  const [editBirthday, setEditBirthday] = useState(user.birthday || '');
+  const [editZipCode, setEditZipCode] = useState(user.zipCode || '');
   const [isEditing, setIsEditing] = useState(false);
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
@@ -78,7 +86,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   React.useEffect(() => {
     setEditName(user.name);
     setEditEmail(user.email);
-  }, [user.name, user.email]);
+    setEditPhone(user.phone || '');
+    setEditBirthday(user.birthday || '');
+    setEditZipCode(user.zipCode || '');
+  }, [user.name, user.email, user.phone, user.birthday, user.zipCode]);
 
   React.useEffect(() => {
     if (activeTab === 'privacy') {
@@ -275,7 +286,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           { id: 'submissions', label: 'My Submissions', icon: Zap },
           { id: 'preferences', label: 'Hub Preferences', icon: Tag },
           { id: 'settings', label: 'Account Settings', icon: Settings },
-          { id: 'privacy', label: 'Privacy Dashboard', icon: Lock }
+          { id: 'privacy', label: 'Privacy Dashboard', icon: Lock },
+          ...(isAdmin ? [{ id: 'admin', label: 'Admin Portal', icon: Shield }] : [])
         ].map(tab => (
           <button
             key={tab.id}
@@ -459,9 +471,41 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
                   />
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Phone Number</label>
+                    <input 
+                      type="tel" 
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="+1 (555) 000-0000"
+                      className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Zip Code</label>
+                    <input 
+                      type="text" 
+                      maxLength={10}
+                      value={editZipCode}
+                      onChange={(e) => setEditZipCode(e.target.value)}
+                      placeholder="74103"
+                      className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Birthday</label>
+                  <input 
+                    type="date" 
+                    value={editBirthday}
+                    onChange={(e) => setEditBirthday(e.target.value)}
+                    className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
+                  />
+                </div>
                 <div className="pt-6">
                   <button 
-                    onClick={() => onUpdateProfile(editName, editEmail)}
+                    onClick={() => onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode)}
                     className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl"
                   >
                     Update Account Data
@@ -591,6 +635,128 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     <div className="px-6 py-3 bg-emerald-50 text-emerald-600 font-black rounded-xl text-[9px] uppercase tracking-widest">
                       Verified Secure
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </ErrorBoundary>
+        )}
+        {activeTab === 'admin' && isAdmin && (
+          <ErrorBoundary>
+            <motion.div
+              key="admin"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
+            >
+              <div className="max-w-4xl">
+                <div className="flex items-center gap-4 mb-12">
+                  <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Metropolitan Admin Portal</h3>
+                    <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px]">System-level intelligence management</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+                  <div className="bg-gray-50 rounded-[2.5rem] p-10 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Database className="w-5 h-5 text-orange-600" />
+                      <h4 className="text-lg font-black text-gray-900 uppercase tracking-tight">Bulk Intelligence Sync</h4>
+                    </div>
+                    <p className="text-sm text-gray-500 mb-8 leading-relaxed">
+                      Synchronize pre-formatted schedules for OU Football, OKC Thunder, and Dallas Sports directly to the metropolitan database.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">OU Football 2026</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-gray-400">6 Events</span>
+                      </div>
+                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">OKC Thunder April</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-gray-400">2 Events</span>
+                      </div>
+                      <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-gray-100">
+                        <div className="flex items-center gap-3">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">Dallas Sports Mix</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-gray-400">3 Events</span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={async () => {
+                        if (window.confirm(`Synchronize ${bulkEvents.length} events to Firestore?`)) {
+                          const btn = document.getElementById('sync-btn');
+                          if (btn) btn.innerText = 'Synchronizing...';
+                          
+                          let count = 0;
+                          for (const event of bulkEvents) {
+                            try {
+                              // Format date to MM/DD/YYYY if it's in YYYY-MM-DD
+                              let formattedDate = event.date;
+                              if (event.date && event.date.includes('-')) {
+                                const [y, m, d] = event.date.split('-');
+                                formattedDate = `${m}/${d}/${y}`;
+                              }
+
+                              await addDoc(collection(db, 'events'), {
+                                ...event,
+                                date: formattedDate,
+                                userCreated: true,
+                                isTrending: false,
+                                createdAt: serverTimestamp(),
+                                userId: user.id
+                              });
+                              count++;
+                            } catch (err) {
+                              console.error("Sync failed for event:", event.title, err);
+                            }
+                          }
+                          alert(`Successfully synchronized ${count} metropolitan signals.`);
+                          if (btn) btn.innerText = 'Sync Intelligence Now';
+                        }
+                      }}
+                      id="sync-btn"
+                      className="w-full mt-10 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-3"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Sync Intelligence Now
+                    </button>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-[2.5rem] p-10 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Zap className="w-5 h-5 text-orange-600" />
+                      <h4 className="text-lg font-black text-gray-900 uppercase tracking-tight">System Health</h4>
+                    </div>
+                    <div className="space-y-6">
+                      <div className="p-6 bg-white rounded-2xl border border-gray-100">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Database Connection</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-sm font-black text-gray-900 uppercase italic">Active & Secure</span>
+                        </div>
+                      </div>
+                      <div className="p-6 bg-white rounded-2xl border border-gray-100">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Auth Provider</span>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          <span className="text-sm font-black text-gray-900 uppercase italic">Firebase Identity</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
