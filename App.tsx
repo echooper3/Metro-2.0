@@ -252,10 +252,12 @@ const App: React.FC = () => {
       } else {
         if (isNextPage) {
           setHasMore(false);
-        } else if (!result) {
-          // If we have no data at all, show a more descriptive error
+        } else {
+          // If we have no data at all, show a more descriptive error and revert to seeds
           if (allEventsRef.current.length === 0) {
-            addToast("Metropolitan Sync failed. Please check your connection or try again later.");
+            const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[selectedCity?.id || ''] || GLOBAL_SEED_EVENTS);
+            setAllEvents(seeds);
+            addToast("Metropolitan Sync failed. Using regional fallback data.");
           }
           setSourceStatus('seed');
         }
@@ -265,10 +267,12 @@ const App: React.FC = () => {
       const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
       
       if (allEventsRef.current.length === 0) {
+        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[selectedCity?.id || ''] || GLOBAL_SEED_EVENTS);
+        setAllEvents(seeds);
         if (isQuota) {
-          addToast("Metropolitan Signal is currently at capacity. Showing local data.");
+          addToast("Metropolitan Signal is currently at capacity. Using regional backups.");
         } else {
-          addToast("Metropolitan Sync failed. Showing local data.");
+          addToast("Metropolitan Sync failed. Using regional backup data.");
         }
       }
       setSourceStatus(isQuota ? 'quota-limited' : 'seed');
@@ -304,17 +308,18 @@ const App: React.FC = () => {
     testConnection();
   }, [updateWeather, loadCityEvents, isAuthReady]);
 
-  // Firebase Auth Listener
+  // Firebase Auth & User Data Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeUser: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const userDocRef = doc(db, 'users', firebaseUser.uid);
+        
+        // Initial check and setup
         try {
           const userDoc = await getDoc(userDocRef);
-          if (userDoc.exists()) {
-            setUser(userDoc.data() as UserProfile);
-          } else {
-            // Create initial profile if not exists
+          if (!userDoc.exists()) {
             const newUser: UserProfile = {
               id: firebaseUser.uid,
               name: firebaseUser.displayName || 'Metropolitan Member',
@@ -332,12 +337,30 @@ const App: React.FC = () => {
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
         }
+
+        // Set up real-time listener for user document
+        unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
+          if (snapshot.exists()) {
+            setUser(snapshot.data() as UserProfile);
+          }
+        }, (error) => {
+          console.error("User Snapshot Error:", error);
+        });
+
       } else {
+        if (unsubscribeUser) {
+          unsubscribeUser();
+          unsubscribeUser = null;
+        }
         setUser(null);
       }
       setIsAuthReady(true);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUser) unsubscribeUser();
+    };
   }, []);
 
   // Firestore Events Sync
@@ -576,7 +599,7 @@ const App: React.FC = () => {
                 className="hidden lg:block relative"
               >
                 <div className="relative aspect-square rounded-[4rem] overflow-hidden shadow-2xl rotate-3">
-                  <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1200" className="w-full h-full object-cover" alt="City" />
+                  <img src="https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=1200" className="w-full h-full object-cover" alt="City" referrerPolicy="no-referrer" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
                   <div className="absolute bottom-12 left-12 right-12">
                      <div className="flex items-center space-x-3 mb-4">
@@ -832,7 +855,7 @@ const App: React.FC = () => {
               
               <div className="grid grid-cols-1 lg:grid-cols-2">
                 <div className="h-[400px] lg:h-auto relative">
-                  <img src={detailedEvent.imageUrl} className="w-full h-full object-cover" alt={detailedEvent.title} />
+                  <img src={detailedEvent.imageUrl} className="w-full h-full object-cover" alt={detailedEvent.title} referrerPolicy="no-referrer" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                   <div className="absolute bottom-8 left-8 right-8">
                      <div className="flex flex-wrap gap-3">

@@ -78,7 +78,12 @@ service cloud.firestore {
              data.preferences is map &&
              (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
              (!('birthday' in data) || (data.birthday is string && data.birthday.size() < 20)) &&
-             (!('zipCode' in data) || (data.zipCode is string && data.zipCode.size() < 20));
+             (!('zipCode' in data) || (data.zipCode is string && data.zipCode.size() < 20)) &&
+             (!('syncStats' in data) || (
+               data.syncStats is map &&
+               (!('lastSyncAt' in data.syncStats) || data.syncStats.lastSyncAt is string) &&
+               (!('totalSyncs' in data.syncStats) || data.syncStats.totalSyncs is number)
+             ));
     }
 
     function isValidEvent(data) {

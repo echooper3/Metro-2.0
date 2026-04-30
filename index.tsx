@@ -2,6 +2,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import './index.css';
+
+window.addEventListener('error', (event) => {
+  console.error('Metropolitan Runtime Error:', event.error);
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
