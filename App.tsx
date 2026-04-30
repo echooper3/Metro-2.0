@@ -226,7 +226,8 @@ const App: React.FC = () => {
     if (!isNextPage) {
       setIsRefreshing(true);
       setHasMore(true);
-      if (!cached) setAllEvents([]); 
+      // Only clear if we don't have data, or if we want to show a clean loading state
+      if (!cached && allEventsRef.current.length === 0) setAllEvents([]); 
     } else {
       setIsPageLoading(true);
     }
@@ -249,30 +250,29 @@ const App: React.FC = () => {
             if (result.events.length < 12) setHasMore(false);
           }
         });
-      } else {
-        if (isNextPage) {
-          setHasMore(false);
-        } else {
-          // If we have no data at all, show a more descriptive error and revert to seeds
-          if (allEventsRef.current.length === 0) {
-            const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[selectedCity?.id || ''] || GLOBAL_SEED_EVENTS);
-            setAllEvents(seeds);
-            addToast("Metropolitan Sync failed. Using regional fallback data.");
-          }
-          setSourceStatus('seed');
+      } else if (!isNextPage) {
+        // Fallback to seeds if we got no results from AI
+        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[CITIES.find(c => c.name === cityName)?.id || ''] || GLOBAL_SEED_EVENTS);
+        setAllEvents(seeds);
+        setSourceStatus('seed');
+        if (options.keyword) {
+            addToast(`No live signals found for "${options.keyword}". Using regional database.`);
         }
       }
     } catch (err: any) {
       console.warn("Metropolitan Sync failed:", err);
       const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
       
-      if (allEventsRef.current.length === 0) {
-        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[selectedCity?.id || ''] || GLOBAL_SEED_EVENTS);
+      // Revert to seeds on any catch block error
+      if (allEventsRef.current.length === 0 || !isNextPage) {
+        const cityId = CITIES.find(c => c.name === cityName)?.id || '';
+        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[cityId] || GLOBAL_SEED_EVENTS);
         setAllEvents(seeds);
+        
         if (isQuota) {
           addToast("Metropolitan Signal is currently at capacity. Using regional backups.");
         } else {
-          addToast("Metropolitan Sync failed. Using regional backup data.");
+          addToast("Metropolitan Sync system offline. Using regional backup data.");
         }
       }
       setSourceStatus(isQuota ? 'quota-limited' : 'seed');

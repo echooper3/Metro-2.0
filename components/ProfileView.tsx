@@ -770,11 +770,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
                       
                       {user.syncStats && (
-                        <div className="p-6 bg-orange-50 rounded-2xl border border-orange-100">
-                          <span className="text-[9px] font-black uppercase tracking-[0.2em] text-orange-600 block mb-2">Sync Intelligence Status</span>
-                          <div className="space-y-1">
-                            <p className="text-[10px] font-black text-gray-900 uppercase">Last Sync: <span className="text-orange-600">{user.syncStats.lastSyncAt ? new Date(user.syncStats.lastSyncAt).toLocaleString() : 'Never'}</span></p>
-                            <p className="text-[10px] font-black text-gray-900 uppercase">Total Operations: <span className="text-orange-600">{user.syncStats.totalSyncs || 0}</span></p>
+                        <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
+                          <div>
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-600 block mb-2">Authenticated Sync Status</span>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-gray-900 uppercase">Last Sync: <span className="text-emerald-600">{user.syncStats.lastSyncAt ? new Date(user.syncStats.lastSyncAt).toLocaleString() : 'Never'}</span></p>
+                              <p className="text-[10px] font-black text-gray-900 uppercase">Total Operations: <span className="text-emerald-600">{user.syncStats.totalSyncs || 0}</span></p>
+                            </div>
+                          </div>
+                          <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                           </div>
                         </div>
                       )}

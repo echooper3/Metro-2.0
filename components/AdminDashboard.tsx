@@ -86,14 +86,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
     setIsSyncing(true);
     setSyncStatus('Initializing Global Sync...');
     try {
-      for (const city of CITIES) {
-        setSyncStatus(`Syncing ${city.name}...`);
+      for (let i = 0; i < CITIES.length; i++) {
+        const city = CITIES[i];
+        setSyncStatus(`Syncing ${city.name} (${i+1}/${CITIES.length})...`);
         const result = await fetchEvents(city.name, { forceRefresh: true });
         if (result && result.events.length > 0) {
           // Save to Firestore
           for (const event of result.events) {
-            // Check if event already exists by title (simple de-dupe)
-            // In a real app we'd use a more robust check
             const eventRef = doc(collection(db, 'events'));
             await setDoc(eventRef, {
               ...event,
@@ -103,6 +102,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
               createdAt: serverTimestamp()
             });
           }
+        }
+        // Small delay between cities to respect quota
+        if (i < CITIES.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
       
