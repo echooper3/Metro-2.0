@@ -73,6 +73,7 @@ export interface UserProfile {
   preferences: {
     favoriteCity?: string;
     favoriteCategories: Category[];
+    hasCompletedOnboarding?: boolean;
   };
 }
 

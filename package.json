@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "start": "node server.ts",
     "bulk-upload": "tsx scripts/bulk-upload.ts",
     "build": "vite build",
     "preview": "vite preview",

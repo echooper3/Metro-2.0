@@ -355,6 +355,30 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
             />
           </div>
 
+          <div className="p-8 bg-gray-50 rounded-[2rem] border border-gray-100">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 bg-black text-white rounded-xl flex items-center justify-center">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <h3 className="text-xs font-black uppercase tracking-widest text-gray-900">Submission Guidelines</h3>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-2">
+                <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block">Accepted Signals</span>
+                <p className="text-[10px] font-bold text-gray-500 leading-relaxed uppercase">Live music, art galleries, workshops, community meetups, and urban festivals.</p>
+              </div>
+              <div className="space-y-2">
+                <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block">Visual Assets</span>
+                <p className="text-[10px] font-bold text-gray-500 leading-relaxed uppercase">High-res JPG/PNG mandatory. Use clear, vibrant subjects that reflect the pulse of the metro.</p>
+              </div>
+              <div className="space-y-2">
+                <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block">Metropolitan Code</span>
+                <p className="text-[10px] font-bold text-gray-500 leading-relaxed uppercase">Authentic data only. Zero tolerance for harmful content, hate speech, or deceptive signals.</p>
+              </div>
+            </div>
+          </div>
+
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}

@@ -18,6 +18,7 @@ const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
 const ProfileView = lazy(() => import('./components/ProfileView'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const OnboardingFlow = lazy(() => import('./components/OnboardingFlow'));
 
 const SEARCH_MESSAGES = [
   "Synchronizing Live Metropolitan Signals...",
@@ -48,6 +49,7 @@ const App: React.FC = () => {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   const isAdmin = user?.email === 'donva.adkism@gmail.com';
   
@@ -129,6 +131,55 @@ const App: React.FC = () => {
       console.warn("Traffic tracking failed", e);
     }
   }, [isAuthReady]);
+
+  useEffect(() => {
+    if (isAuthReady) {
+      if (user) {
+        if (!user.preferences?.hasCompletedOnboarding) {
+          setShowOnboarding(true);
+        }
+      } else {
+        const guestOnboarding = localStorage.getItem('metro_onboarding_complete');
+        if (!guestOnboarding) {
+          setShowOnboarding(true);
+        }
+      }
+    }
+  }, [isAuthReady, user?.preferences?.hasCompletedOnboarding]);
+
+  const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[] }) => {
+    if (user) {
+      try {
+        const userRef = doc(db, 'users', user.id);
+        const updatedPrefs = {
+          ...user.preferences,
+          favoriteCity: data.favoriteCity,
+          favoriteCategories: data.favoriteCategories,
+          hasCompletedOnboarding: true
+        };
+        await updateDoc(userRef, { preferences: updatedPrefs });
+        setUser(prev => prev ? { ...prev, preferences: updatedPrefs } : null);
+        addToast("Metropolitan profile synchronized.");
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+      }
+    } else {
+      localStorage.setItem('metro_onboarding_complete', 'true');
+      localStorage.setItem('metro_pref_city', data.favoriteCity);
+      localStorage.setItem('metro_pref_cats', JSON.stringify(data.favoriteCategories));
+    }
+    
+    // Auto-select city if one was chosen
+    if (data.favoriteCity) {
+      const city = CITIES.find(c => c.name === data.favoriteCity);
+      if (city) {
+        handleCitySelect(city);
+      }
+    }
+    
+    setShowOnboarding(false);
+    addToast("Welcome to the Metropolitan Intelligence Network.");
+  };
 
   const handleOpenDetails = useCallback((event: EventActivity) => {
     setDetailedEvent(event);
@@ -329,7 +380,7 @@ const App: React.FC = () => {
               birthday: '',
               zipCode: '',
               savedEvents: [],
-              preferences: { favoriteCategories: [] }
+              preferences: { favoriteCategories: [], hasCompletedOnboarding: false }
             };
             await setDoc(userDocRef, newUser);
             setUser(newUser);
@@ -833,6 +884,18 @@ const App: React.FC = () => {
           <AuthModal onClose={() => setShowAuthModal(false)} onSuccess={handleAuthSuccess} />
         </Suspense>
       )}
+
+      <AnimatePresence>
+        {showOnboarding && (
+          <Suspense fallback={null}>
+            <OnboardingFlow 
+              user={user}
+              onComplete={handleCompleteOnboarding}
+              onClose={() => setShowOnboarding(false)}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {detailedEvent && (
