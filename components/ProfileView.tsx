@@ -571,7 +571,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
                     <div className="flex items-center gap-3 mb-6">
                       <Sparkles className="w-4 h-4 text-gray-400" />
-                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Gemini Intelligence</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Metropolitan Intelligence</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />

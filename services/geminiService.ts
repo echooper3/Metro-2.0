@@ -74,7 +74,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean, signal?: AbortSignal) {
   const { category, keyword, page = 1 } = options;
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const modelName = "gemini-2.0-flash";
+  const modelName = "gemini-1.5-flash";
   
   const now = new Date();
   const currentDateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -257,10 +257,9 @@ export const searchPlaces = async (input: string) => {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-1.5-flash",
       contents: `Venue lookup OK/TX: "${input}". Return JSON: [{name, address, lat, lng}]. Limit 5.`,
       config: { 
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseMimeType: "application/json" 
       }
     });

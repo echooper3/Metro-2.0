@@ -313,9 +313,6 @@ const App: React.FC = () => {
         }
       }
     } catch (err: any) {
-      const fetchStatus = await fetch("/api/config/status").then(r => r.json()).catch(() => ({}));
-      const isGeminiMissing = !fetchStatus.gemini;
-      
       console.warn("Metropolitan Sync failed:", err);
       const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
       
@@ -327,13 +324,11 @@ const App: React.FC = () => {
         
         if (isQuota) {
           addToast("Metropolitan Signal is currently at capacity. Using regional backups.");
-        } else if (isGeminiMissing) {
-          addToast("Metropolitan Intelligence is missing its core key. Sync unavailable.");
         } else {
           addToast("Metropolitan Sync system offline. Using regional backup data.");
         }
       }
-      setSourceStatus(isQuota ? 'quota-limited' : isGeminiMissing ? 'seed' : 'seed');
+      setSourceStatus(isQuota ? 'quota-limited' : 'seed');
     } finally {
       setIsRefreshing(false);
       setIsVerifying(false);
