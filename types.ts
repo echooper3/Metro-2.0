@@ -65,7 +65,7 @@ export interface UserProfile {
   phone?: string;
   birthday?: string;
   zipCode?: string;
-  savedEvents: string[]; // Array of event IDs
+  savedEvents: EventActivity[]; // Full objects for persistence across hubs
   syncStats?: {
     lastSyncAt?: string;
     totalSyncs?: number;

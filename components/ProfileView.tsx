@@ -315,8 +315,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               exit={{ opacity: 0, y: -20 }}
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
             >
-              {savedEvents.length > 0 ? (
-                savedEvents.map((event, i) => (
+              {savedEvents.filter(e => e && typeof e === 'object').length > 0 ? (
+                savedEvents.filter(e => e && typeof e === 'object').map((event, i) => (
                   <motion.div
                     key={event.id}
                     initial={{ opacity: 0, scale: 0.9 }}

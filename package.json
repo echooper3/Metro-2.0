@@ -29,10 +29,14 @@
     "tsx": "^4.21.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
+    "@types/eslint__js": "^8.42.3",
     "@types/node": "^22.14.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^10.3.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

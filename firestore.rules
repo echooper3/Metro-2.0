@@ -2,124 +2,125 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId} (matches request.auth.uid)
-    // Fields:
-    //   - id: string (required)
-    //   - name: string (required)
-    //   - email: string (required)
-    //   - avatar: string (optional)
-    //   - phone: string (optional)
-    //   - birthday: string (optional)
-    //   - zipCode: string (optional)
-    //   - savedEvents: list (required)
-    //   - preferences: map (required)
-    //
-    // Collection: events
-    // Document ID: {eventId}
-    // Fields:
-    //   - id: string (required)
-    //   - title: string (required, < 100 chars)
-    //   - category: string (required)
-    //   - description: string (required, < 2000 chars)
-    //   - date: string (required)
-    //   - time: string (required)
-    //   - venue: string (required)
-    //   - location: string (required)
-    //   - cityName: string (required)
-    //   - imageUrl: string (optional)
-    //   - price: string (optional)
-    //   - ageRestriction: string (optional)
-    //   - userId: string (required)
-    //   - userCreated: bool (required)
-    //   - createdAt: timestamp (required)
-    //
-    // ===============================================================
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
     // ===============================================================
-    // Helper Functions
+    // Helper Functions (Phase 3)
     // ===============================================================
 
-    function isAuthenticated() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     function isAdmin() {
-      return isAuthenticated() &&
-        (request.auth.token.email == "donva.adkism@gmail.com" ||
-          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+      return isSignedIn() && (
+        request.auth.token.email == "donva.adkism@gmail.com" ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
     }
 
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    function incoming() {
+      return request.resource.data;
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function existing() {
+      return resource.data;
     }
 
     // ===============================================================
-    // Domain Validators
+    // Validation Blueprints (Pillar 2)
     // ===============================================================
 
     function isValidUser(data) {
-      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.email is string && isValidEmail(data.email) &&
-             data.savedEvents is list &&
+      return data.id is string && data.id == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.savedEvents is list && data.savedEvents.size() <= 100 &&
              data.preferences is map &&
-             (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
-             (!('birthday' in data) || (data.birthday is string && data.birthday.size() < 20)) &&
-             (!('zipCode' in data) || (data.zipCode is string && data.zipCode.size() < 20)) &&
-             (!('syncStats' in data) || (
-               data.syncStats is map &&
-               (!('lastSyncAt' in data.syncStats) || data.syncStats.lastSyncAt is string) &&
-               (!('totalSyncs' in data.syncStats) || data.syncStats.totalSyncs is number)
-             ));
+             data.preferences.favoriteCategories is list &&
+             (!('hasCompletedOnboarding' in data.preferences) || data.preferences.hasCompletedOnboarding is bool) &&
+             (!('avatar' in data) || data.avatar is string) &&
+             (!('phone' in data) || data.phone is string) &&
+             (!('birthday' in data) || data.birthday is string) &&
+             (!('zipCode' in data) || data.zipCode is string);
     }
 
     function isValidEvent(data) {
-      return data.title is string && data.title.size() > 0 && data.title.size() < 150 &&
-             data.description is string && data.description.size() < 3000 &&
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
              data.category is string &&
+             data.description is string && data.description.size() <= 3000 &&
              data.cityName is string &&
              data.venue is string &&
              data.userId is string &&
-             data.userCreated is bool;
+             data.userCreated is bool &&
+             (!('imageUrl' in data) || data.imageUrl is string) &&
+             (!('price' in data) || data.price is string);
     }
 
     // ===============================================================
-    // Rules
+    // Rules (Pillar 4)
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && !('role' in request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
-                    (request.resource.data.role == resource.data.role || (!('role' in resource.data) && !('role' in request.resource.data))) || isAdmin();
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      
+      allow create: if isVerifiedUser() && isValidId(userId) && userId == request.auth.uid &&
+                    isValidUser(incoming()) && 
+                    incoming().keys().hasAll(['id', 'name', 'email', 'savedEvents', 'preferences']) &&
+                    !('role' in incoming());
+
+      allow update: if (isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) &&
+                    // Action-Based Update: Profile synchronization
+                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats'])) &&
+                    !('role' in incoming())) 
+                    || isAdmin();
     }
 
     match /events/{eventId} {
-      allow read: if true; // Events are public
-      allow create: if isAuthenticated() && isValidEvent(request.resource.data) && 
-                    request.resource.data.userId == request.auth.uid &&
-                    (request.resource.data.userCreated == true || isAdmin());
-      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid && isValidEvent(request.resource.data) && request.resource.data.userId == resource.data.userId) || isAdmin();
-      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow read: if true; // Public directory
+      
+      // Pillar 8: Secure List Queries
+      allow list: if true; 
+
+      allow create: if isVerifiedUser() && isValidId(eventId) &&
+                    isValidEvent(incoming()) &&
+                    incoming().userId == request.auth.uid &&
+                    incoming().userCreated == true &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if (isSignedIn() && existing().userId == request.auth.uid &&
+                    isValidEvent(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    // Action: Content Edit
+                    incoming().diff(existing()).affectedKeys().hasAll(['updatedAt']) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'date', 'time', 'venue', 'location', 'imageUrl', 'price', 'ageRestriction', 'updatedAt']) &&
+                    incoming().updatedAt == request.time)
+                    || isAdmin();
+
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
     }
 
     match /stats/{statId} {
       allow read: if isAdmin();
-      allow create: if isAuthenticated() && statId == 'traffic'; // Allow first user to initialize traffic stats
-      allow update: if isAuthenticated(); // Allow users to increment traffic stats
+      allow create: if isSignedIn() && isValidId(statId) && statId == 'traffic';
+      allow update: if isSignedIn() && isValidId(statId) && statId == 'traffic' &&
+                    incoming().diff(existing()).affectedKeys().hasAny(['totalViews', 'cityViews', 'eventViews', 'categoryViews', 'searchQueries', 'eventSaves', 'lastUpdated']) &&
+                    incoming().lastUpdated == request.time;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && request.auth.uid == adminId;
     }
 
     match /test/connection {

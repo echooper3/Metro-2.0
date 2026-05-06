@@ -19,6 +19,7 @@ const AuthModal = lazy(() => import('./components/AuthModal'));
 const ProfileView = lazy(() => import('./components/ProfileView'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const OnboardingFlow = lazy(() => import('./components/OnboardingFlow'));
+const EventShare = lazy(() => import('./components/EventShare'));
 
 const SEARCH_MESSAGES = [
   "Synchronizing Live Metropolitan Signals...",
@@ -191,10 +192,10 @@ const App: React.FC = () => {
       setShowAuthModal(true);
       return;
     }
-    const isSaved = user.savedEvents.includes(event.id);
+    const isSaved = user.savedEvents.some(e => e.id === event.id);
     const nextSaved = isSaved 
-      ? user.savedEvents.filter(id => id !== event.id)
-      : [...user.savedEvents, event.id];
+      ? user.savedEvents.filter(e => e.id !== event.id)
+      : [...user.savedEvents, event];
     
     try {
       await updateDoc(doc(db, 'users', user.id), { savedEvents: nextSaved });
@@ -332,7 +333,7 @@ const App: React.FC = () => {
       setIsVerifying(false);
       setIsPageLoading(false);
     }
-  }, [activeCategory, allEvents.length, addToast, trackView]);
+  }, [activeCategory, addToast, trackView]);
 
   useEffect(() => {
     const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });
@@ -345,18 +346,19 @@ const App: React.FC = () => {
     }
     updateWeather('Dallas');
 
-    // Test Firestore Connection
-    const testConnection = async () => {
-      if (!isAuthReady) return;
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
+    // Test Firestore Connection once auth is ready
+    if (isAuthReady) {
+      const testConnection = async () => {
+        try {
+          await getDocFromServer(doc(db, 'test', 'connection'));
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('the client is offline')) {
+            console.error("Please check your Firebase configuration.");
+          }
         }
-      }
-    };
-    testConnection();
+      };
+      testConnection();
+    }
   }, [updateWeather, loadCityEvents, isAuthReady]);
 
   // Firebase Auth & User Data Listener
@@ -788,7 +790,7 @@ const App: React.FC = () => {
                         event={event} 
                         showCity={view === AppView.SEARCH_RESULTS} 
                         onOpenDetails={handleOpenDetails} 
-                        isSaved={user?.savedEvents.includes(event.id)}
+                        isSaved={user?.savedEvents.some(se => se.id === event.id)}
                         onToggleSave={() => handleToggleSave(event)}
                       />
                     </motion.div>
@@ -848,8 +850,8 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
           <ProfileView 
             user={user} 
-            savedEvents={allEvents.filter(e => user.savedEvents.includes(e.id))}
-            myEvents={allEvents.filter(e => e.userId === user.id)}
+            savedEvents={user.savedEvents}
+            myEvents={dbEvents.filter(e => e.userId === user.id)}
             onUpdatePreferences={handleUpdatePreferences}
             onLogout={handleLogout}
             onOpenEventDetails={handleOpenDetails}
@@ -966,6 +968,10 @@ const App: React.FC = () => {
 
                   <p className="text-gray-500 text-lg leading-relaxed mb-12 font-medium">{detailedEvent.description}</p>
                   
+                  <Suspense fallback={<div className="h-24 bg-gray-50 animate-pulse rounded-2xl" />}>
+                    <EventShare event={detailedEvent} />
+                  </Suspense>
+                  
                   <div className="mb-12">
                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400 mb-4">Metropolitan Mapping</p>
                     <div className="w-full h-64 bg-gray-100 rounded-[2rem] overflow-hidden border border-gray-100 shadow-inner">
@@ -1000,13 +1006,13 @@ const App: React.FC = () => {
                       whileTap={{ scale: 0.95 }}
                       onClick={() => handleToggleSave(detailedEvent)}
                       className={`inline-flex items-center px-10 py-5 font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px] transition-all ${
-                        user?.savedEvents.includes(detailedEvent.id)
+                        user?.savedEvents.some(se => se.id === detailedEvent.id)
                           ? 'bg-orange-600 text-white shadow-orange-600/20'
                           : 'bg-white text-gray-900 border-2 border-gray-100 hover:border-black'
                       }`}
                     >
-                      <Heart className={`w-4 h-4 mr-3 ${user?.savedEvents.includes(detailedEvent.id) ? 'fill-current' : ''}`} />
-                      {user?.savedEvents.includes(detailedEvent.id) ? 'Secured in Vault' : 'Save to Vault'}
+                      <Heart className={`w-4 h-4 mr-3 ${user?.savedEvents.some(se => se.id === detailedEvent.id) ? 'fill-current' : ''}`} />
+                      {user?.savedEvents.some(se => se.id === detailedEvent.id) ? 'Secured in Vault' : 'Save to Vault'}
                     </motion.button>
                     {detailedEvent.price && (
                       <div className="px-10 py-5 bg-gray-50 border border-gray-100 text-gray-900 font-black rounded-2xl uppercase tracking-widest text-[10px] flex items-center">

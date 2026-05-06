@@ -12,7 +12,7 @@
         "phone": { "type": "string" },
         "birthday": { "type": "string" },
         "zipCode": { "type": "string" },
-        "savedEvents": { "type": "array", "items": { "type": "string" } },
+        "savedEvents": { "type": "array", "items": { "$ref": "Event" } },
         "syncStats": {
           "type": "object",
           "properties": {
@@ -24,7 +24,8 @@
           "type": "object",
           "properties": {
             "favoriteCategories": { "type": "array", "items": { "type": "string" } },
-            "favoriteCity": { "type": "string" }
+            "favoriteCity": { "type": "string" },
+            "hasCompletedOnboarding": { "type": "boolean" }
           }
         }
       },
