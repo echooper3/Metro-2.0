@@ -42,6 +42,7 @@ interface ProfileViewProps {
   onDeleteEvent: (event: EventActivity) => void;
   onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => void;
   isAdmin?: boolean;
+  isFirebaseConnected?: boolean | null;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ 
@@ -55,7 +56,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onToggleSave,
   onDeleteEvent,
   onUpdateProfile,
-  isAdmin
+  isAdmin,
+  isFirebaseConnected
 }) => {
   const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'preferences' | 'settings' | 'privacy' | 'admin'>('saved');
   const [editName, setEditName] = useState(user.name);
@@ -167,10 +169,10 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 <Shield className="w-3 h-3 text-orange-600" />
                 <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Member</span>
               </div>
-              <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full ${apiStatus.gemini && apiStatus.ticketmaster ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
-                <Zap className={`w-3 h-3 ${apiStatus.gemini && apiStatus.ticketmaster ? 'text-emerald-600' : 'text-orange-600'}`} />
+              <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full ${apiStatus.gemini && apiStatus.ticketmaster && isFirebaseConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
+                <Zap className={`w-3 h-3 ${apiStatus.gemini && apiStatus.ticketmaster && isFirebaseConnected ? 'text-emerald-600' : 'text-orange-600'}`} />
                 <span className="font-black uppercase tracking-[0.3em] text-[9px]">
-                  Signals: {apiStatus.gemini && apiStatus.ticketmaster ? 'Optimal' : 'Limited'}
+                  Signals: {apiStatus.gemini && apiStatus.ticketmaster && isFirebaseConnected ? 'Optimal' : (isFirebaseConnected === false ? 'System Offline' : 'Limited')}
                 </span>
               </div>
             </div>
@@ -562,7 +564,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${apiStatus.ticketmaster ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
                       <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.ticketmaster ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {apiStatus.ticketmaster ? 'Configured' : 'Missing'}
+                        {apiStatus.ticketmaster ? 'Configured' : 'Missing Key'}
                       </span>
                     </div>
                   </div>
@@ -574,7 +576,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
                       <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.gemini ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {apiStatus.gemini ? 'Operational' : 'Offline'}
+                        {apiStatus.gemini ? 'Operational' : 'Offline (Missing Key)'}
                       </span>
                     </div>
                   </div>
@@ -755,10 +757,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     <div className="space-y-6">
                       <div className="p-6 bg-white rounded-2xl border border-gray-100">
-                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Database Connection</span>
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Cloud Database</span>
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                          <span className="text-sm font-black text-gray-900 uppercase italic">Active & Secure</span>
+                          <div className={`w-2 h-2 rounded-full ${isFirebaseConnected ? 'bg-emerald-500' : isFirebaseConnected === false ? 'bg-red-500' : 'bg-orange-500'} animate-pulse`} />
+                          <span className={`text-sm font-black uppercase italic ${isFirebaseConnected ? 'text-emerald-600' : isFirebaseConnected === false ? 'text-red-600' : 'text-orange-600'}`}>
+                            {isFirebaseConnected ? 'Active & Secure' : isFirebaseConnected === false ? 'Connection Offline' : 'Syncing Hub...'}
+                          </span>
                         </div>
                       </div>
                       <div className="p-6 bg-white rounded-2xl border border-gray-100">

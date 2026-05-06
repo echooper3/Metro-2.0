@@ -52,6 +52,7 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
   const isAdmin = user?.email === 'donva.adkism@gmail.com';
   
   const [page, setPage] = useState(1);
@@ -312,6 +313,9 @@ const App: React.FC = () => {
         }
       }
     } catch (err: any) {
+      const fetchStatus = await fetch("/api/config/status").then(r => r.json()).catch(() => ({}));
+      const isGeminiMissing = !fetchStatus.gemini;
+      
       console.warn("Metropolitan Sync failed:", err);
       const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
       
@@ -323,11 +327,13 @@ const App: React.FC = () => {
         
         if (isQuota) {
           addToast("Metropolitan Signal is currently at capacity. Using regional backups.");
+        } else if (isGeminiMissing) {
+          addToast("Metropolitan Intelligence is missing its core key. Sync unavailable.");
         } else {
           addToast("Metropolitan Sync system offline. Using regional backup data.");
         }
       }
-      setSourceStatus(isQuota ? 'quota-limited' : 'seed');
+      setSourceStatus(isQuota ? 'quota-limited' : isGeminiMissing ? 'seed' : 'seed');
     } finally {
       setIsRefreshing(false);
       setIsVerifying(false);
@@ -351,9 +357,14 @@ const App: React.FC = () => {
       const testConnection = async () => {
         try {
           await getDocFromServer(doc(db, 'test', 'connection'));
+          setIsFirebaseConnected(true);
         } catch (error) {
           if (error instanceof Error && error.message.includes('the client is offline')) {
             console.error("Please check your Firebase configuration.");
+            setIsFirebaseConnected(false);
+          } else {
+            // Document might not exist but if we reached server it's "connected"
+            setIsFirebaseConnected(true);
           }
         }
       };
@@ -719,21 +730,28 @@ const App: React.FC = () => {
                   </p>
                 </div>
                 
-                <div className="flex flex-col items-end gap-4">
-                  <div className={`flex items-center gap-6 px-8 py-4 rounded-3xl border transition-all duration-700 ${isRefreshing ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
-                    {isRefreshing ? (
-                      <>
-                        <Zap className="w-5 h-5 text-orange-500 animate-pulse" />
-                        <span className="text-orange-600 font-black text-[10px] uppercase tracking-[0.2em]">{SEARCH_MESSAGES[loadingMsgIdx]}</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
-                        <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'text-emerald-600' : 'text-orange-600'}`}>
-                          {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'ticketmaster' ? 'Ticketmaster Live Feed' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
-                        </span>
-                      </>
-                    )}
+                  <div className="flex flex-col items-end gap-3">
+                    <div className={`flex items-center gap-6 px-8 py-4 rounded-3xl border transition-all duration-700 ${isRefreshing ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100'}`}>
+                      {isRefreshing ? (
+                        <>
+                          <Zap className="w-5 h-5 text-orange-500 animate-pulse" />
+                          <span className="text-orange-600 font-black text-[10px] uppercase tracking-[0.2em]">{SEARCH_MESSAGES[loadingMsgIdx]}</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
+                          <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                            {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'ticketmaster' ? 'Ticketmaster Live Feed' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 px-6 py-3 bg-gray-50/50 rounded-2xl border border-gray-100">
+                      <div className={`w-1.5 h-1.5 rounded-full ${isFirebaseConnected ? 'bg-emerald-500' : isFirebaseConnected === false ? 'bg-red-500' : 'bg-gray-300'} animate-pulse`} />
+                      <span className={`font-black text-[8px] uppercase tracking-[0.2em] ${isFirebaseConnected ? 'text-emerald-600' : isFirebaseConnected === false ? 'text-red-500' : 'text-gray-400'}`}>
+                        Cloud Sync: {isFirebaseConnected ? 'ONLINE' : isFirebaseConnected === false ? 'OFFLINE' : 'CONNECTING...'}
+                      </span>
+                    </div>
                   </div>
                   {sourceStatus !== 'ticketmaster' && (
                     <motion.button
@@ -749,7 +767,6 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
 
           <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30 sticky top-24">
             <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white/90 backdrop-blur-md p-4 rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
@@ -860,6 +877,7 @@ const App: React.FC = () => {
             onDeleteEvent={handleDeleteEvent}
             onUpdateProfile={handleUpdateProfile}
             isAdmin={isAdmin}
+            isFirebaseConnected={isFirebaseConnected}
           />
         </Suspense>
       )}

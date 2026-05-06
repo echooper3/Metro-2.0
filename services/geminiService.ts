@@ -74,7 +74,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function queryGemini(cityName: string, options: FetchOptions, useGrounding: boolean, signal?: AbortSignal) {
   const { category, keyword, page = 1 } = options;
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  const modelName = "gemini-3-flash-preview";
+  const modelName = "gemini-2.0-flash";
   
   const now = new Date();
   const currentDateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
