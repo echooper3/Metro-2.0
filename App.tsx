@@ -4,6 +4,7 @@ import CityCard from './components/CityCard';
 import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
 import ErrorBoundary from './components/ErrorBoundary';
+import AdPlacement from './components/AdPlacement';
 import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
 import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, UserProfile } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
@@ -587,6 +588,7 @@ const App: React.FC = () => {
       isAdmin={isAdmin}
       userAvatar={user?.avatar}
       weather={weather}
+      cityId={selectedCity?.id}
     >
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] flex flex-col items-center gap-2 pointer-events-none">
         <AnimatePresence>
@@ -697,6 +699,7 @@ const App: React.FC = () => {
             </div>
           </section>
 
+          <AdPlacement type="inline" cityId={selectedCity?.id} className="my-20" />
         </div>
       )}
 
@@ -790,23 +793,39 @@ const App: React.FC = () => {
                     </motion.div>
                   ))
                 ) : filteredEvents.length > 0 ? (
-                  filteredEvents.map((event, i) => (
-                    <motion.div 
-                      key={event.id}
-                      layout
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: i * 0.05 }}
-                    >
-                      <EventItem 
-                        event={event} 
-                        showCity={view === AppView.SEARCH_RESULTS} 
-                        onOpenDetails={handleOpenDetails} 
-                        isSaved={user?.savedEvents.some(se => se.id === event.id)}
-                        onToggleSave={() => handleToggleSave(event)}
-                      />
-                    </motion.div>
-                  ))
+                  filteredEvents.flatMap((event, i) => {
+                    const elements = [
+                      <motion.div 
+                        key={event.id}
+                        layout
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: i * 0.05 }}
+                      >
+                        <EventItem 
+                          event={event} 
+                          showCity={view === AppView.SEARCH_RESULTS} 
+                          onOpenDetails={handleOpenDetails} 
+                          isSaved={user?.savedEvents.some(se => se.id === event.id)}
+                          onToggleSave={() => handleToggleSave(event)}
+                        />
+                      </motion.div>
+                    ];
+
+                    if ((i + 1) % 6 === 0) {
+                      elements.push(
+                        <motion.div
+                          key={`ad-${event.id}`}
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: (i + 1) * 0.05 }}
+                        >
+                          <AdPlacement type="card" cityId={selectedCity?.id} />
+                        </motion.div>
+                      );
+                    }
+                    return elements;
+                  })
                 ) : (
                   <motion.div 
                     initial={{ opacity: 0 }}

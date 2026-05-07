@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { WeatherData } from '../types';
 import { Plus, User, MapPin, Sun, Cloud, CloudRain, CloudLightning, Snowflake, Menu, X, ArrowRight, Globe, Zap, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import AdPlacement from './AdPlacement';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +16,7 @@ interface LayoutProps {
   isAdmin?: boolean;
   userAvatar?: string;
   weather?: WeatherData | null;
+  cityId?: string;
 }
 
 const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
@@ -48,11 +50,12 @@ const WeatherWidget: React.FC<{ weather: WeatherData }> = ({ weather }) => {
   );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onAdmin, onPostEvent, onCitySelect, isLoggedIn, isAdmin, userAvatar, weather }) => {
+const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, onAdmin, onPostEvent, onCitySelect, isLoggedIn, isAdmin, userAvatar, weather, cityId }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
+      <AdPlacement type="banner" cityId={cityId} className="z-[60]" />
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-2xl border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 h-24 flex items-center justify-between gap-8">
           <motion.div 
