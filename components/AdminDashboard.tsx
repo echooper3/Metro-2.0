@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3, Search, Heart, LayoutGrid } from 'lucide-react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, BarChart3, Search, Heart, LayoutGrid, X } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, serverTimestamp, updateDoc, increment, writeBatch } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { CITIES } from '../constants';
 import { fetchEvents } from '../services/geminiService';
 import { RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import EventsUploadDialog from './UploadEventsDialog';
 
 interface AdminDashboardProps {
   user: UserProfile;
@@ -21,6 +22,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  
+  // 2. Manage the Upload States
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   useEffect(() => {
     // Fetch traffic stats
@@ -133,6 +139,127 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
     }
   };
 
+const containerVariants = {
+    hidden: { opacity: 0, scale: 0.95, y: 20 },
+    visible: { 
+      opacity: 1, 
+      scale: 1, 
+      y: 0,
+      transition: { type: "spring", duration: 0.5 } 
+    },
+    exit: { opacity: 0, scale: 0.95, y: 20, transition: { duration: 0.2 } }
+  };
+
+  const capitalizeFirstLetter = (value: string) => {
+  if (!value) return "";
+
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+};
+
+const uploadInBatches = async (eventsData: any[], db: any) => {
+  const eventsCollection = collection(db, "events");
+
+  const chunkSize = 500;
+
+  for (let i = 0; i < eventsData.length; i += chunkSize) {
+    const batch = writeBatch(db);
+
+    const chunk = eventsData.slice(i, i + chunkSize);
+
+    chunk.forEach((event) => {
+      const docRef = doc(eventsCollection); // auto ID
+      batch.set(docRef, event);
+    });
+
+    await batch.commit();
+    console.log(`Batch ${i / chunkSize + 1} uploaded`);
+  }
+};
+
+  // 4. Handle File Processing
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const selectedFile = files[0];
+
+        // Validation
+    const validTypes = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ];
+
+    if (!validTypes.includes(selectedFile.type)) {
+      console.error("Please upload a valid Excel or CSV file");
+      return;
+    }
+
+    // Start loading indicator
+    setIsProcessing(true);
+    setUploadSuccess(false);
+
+    const formData = new FormData();
+    formData.append("file", selectedFile);
+
+    try {
+      // 1. Read the Sheet
+      const readResponse = await fetch("/api/read-sheet", {
+        method: "POST",
+        body: formData,
+      });
+
+      const readData = await readResponse.json();
+
+      if (!readResponse.ok) {
+        throw new Error(readData.error || "Failed to read spreadsheet");
+      }
+
+      const jsonData = readData.data;
+
+    const eventsData = jsonData.map((item: any) => ({
+      title: item?.title || "Untitled Event",
+      category: capitalizeFirstLetter(item?.category || ""),
+      description: item?.description || "",
+      date: item?.date || "",
+      time: item?.startTime || "",
+      endTime: item?.endTime || "",
+      lat: item?.lat || "",
+      lng: item?.lng || "",
+      price: item?.price || "",
+      ageRestriction: item?.ageRestriction || "",
+      venue: item?.venue || "",
+      location: item?.location || "",
+      cityName: capitalizeFirstLetter(item?.cityName || ""),
+      imageUrl: item?.imageUrl || "",
+      adminCreated: true,
+      userId: auth.currentUser?.uid || "unknown",
+      createdAt: serverTimestamp(),
+    }));
+
+    await uploadInBatches(eventsData, db);
+
+      // On successful upload:
+      setUploadSuccess(true);
+    } catch (error) {
+      console.error("Upload failed:", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 5. Reset states when reopening or manual close if needed
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open);
+    if (!open) {
+      // Small timeout to reset states *after* exit animation finishes
+      setTimeout(() => {
+        setUploadSuccess(false);
+        setIsProcessing(false);
+      }, 300);
+    }
+  };
+
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -189,6 +316,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
               className={`px-10 py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isSyncing ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-orange-600 shadow-xl shadow-black/10'}`}
             >
               {isSyncing ? 'Syncing Hubs...' : 'Sync All Hubs'}
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className={`px-10 py-5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all bg-black text-white hover:bg-orange-600 shadow-xl shadow-black/10`}
+              onClick={() => handleOpenChange(true)}
+            >
+              Upload Event's
             </motion.button>
           </div>
         </div>
@@ -455,6 +590,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
             </div>
           </div>
         </div>
+
+        {/* Upload Events Dialog */}
+<EventsUploadDialog
+        eventsUploadDialogOpen={isOpen}
+        setEventsUploadDialogOpen={handleOpenChange}
+        isProcessing={isProcessing}
+        uploadSuccess={uploadSuccess}
+        onFileSelect={handleFileSelect}
+        containerVariants={containerVariants}
+      />
       </div>
     </div>
   );

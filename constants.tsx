@@ -6,7 +6,7 @@ export const CITIES: City[] = [
     id: 'tulsa',
     name: 'Tulsa',
     state: 'Oklahoma',
-    image: 'https://images.unsplash.com/photo-1599427404423-69032f913693?auto=format&fit=crop&q=60&w=800',
+    image: 'https://partnertulsa.org/wp-content/uploads/why-tulsa-marquee-image.jpg',
     description: 'The Oil Capital of the World, known for its Art Deco architecture and vibrant arts scene.'
   },
   {

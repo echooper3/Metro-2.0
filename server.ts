@@ -2,9 +2,14 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import multer from "multer";
+import XLSX from "xlsx";
+import dotenv from "dotenv";
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const upload = multer({ storage: multer.memoryStorage() });
 
 async function startServer() {
   const app = express();
@@ -68,6 +73,42 @@ async function startServer() {
     }
   });
 
+app.post("/api/read-sheet", upload.single("file"), async (req: any, res: any) => {
+  try {
+    // 1. Get uploaded file
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        error: "No file uploaded",
+      });
+    }
+
+    // 2. Read workbook from buffer
+    const workbook = XLSX.read(file.buffer, {
+      type: "buffer",
+    });
+
+    // 3. Get first sheet
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+
+    // 4. Convert sheet to JSON
+    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+    return res.json({
+      message: "Success",
+      data: jsonData,
+    });
+
+  } catch (error: any) {
+    console.error("Read Error:", error);
+
+    return res.status(500).json({
+      error: error?.message || 'Upload Failed',
+    });
+  }
+});
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

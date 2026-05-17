@@ -5,7 +5,7 @@ import EventItem from './components/EventItem';
 import EventSkeleton from './components/EventSkeleton';
 import ErrorBoundary from './components/ErrorBoundary';
 import AdPlacement from './components/AdPlacement';
-import { CITIES, CATEGORIES, SEED_EVENTS, GLOBAL_SEED_EVENTS } from './constants';
+import { CITIES, CATEGORIES } from './constants';
 import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, UserProfile } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
 import { fetchCityWeather } from './services/weatherService';
@@ -32,7 +32,7 @@ const SEARCH_MESSAGES = [
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LANDING);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
-  const [allEvents, setAllEvents] = useState<EventActivity[]>(GLOBAL_SEED_EVENTS);
+  const [allEvents, setAllEvents] = useState<EventActivity[]>([]);
   const allEventsRef = useRef(allEvents);
   useEffect(() => {
     allEventsRef.current = allEvents;
@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const loaderRef = useRef<HTMLDivElement>(null);
   const [isPageLoading, setIsPageLoading] = useState(false);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasFetchedInitial = useRef(false);
 
   const [isPending, startTransition] = useTransition();
   const fetchIdRef = useRef(0);
@@ -305,10 +306,7 @@ const App: React.FC = () => {
           }
         });
       } else if (!isNextPage) {
-        // Fallback to seeds if we got no results from AI
-        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[CITIES.find(c => c.name === cityName)?.id || ''] || GLOBAL_SEED_EVENTS);
-        setAllEvents(seeds);
-        setSourceStatus('seed');
+        setHasMore(false);
         if (options.keyword) {
             addToast(`No live signals found for "${options.keyword}". Using regional database.`);
         }
@@ -316,19 +314,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.warn("Metropolitan Sync failed:", err);
       const isQuota = err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED');
-      
-      // Revert to seeds on any catch block error
-      if (allEventsRef.current.length === 0 || !isNextPage) {
-        const cityId = CITIES.find(c => c.name === cityName)?.id || '';
-        const seeds = cityName === 'All' ? GLOBAL_SEED_EVENTS : (SEED_EVENTS[cityId] || GLOBAL_SEED_EVENTS);
-        setAllEvents(seeds);
-        
-        if (isQuota) {
-          addToast("Metropolitan Signal is currently at capacity. Using regional backups.");
-        } else {
-          addToast("Metropolitan Sync system offline. Using regional backup data.");
-        }
-      }
+    
       setSourceStatus(isQuota ? 'quota-limited' : 'seed');
     } finally {
       setIsRefreshing(false);
@@ -338,6 +324,7 @@ const App: React.FC = () => {
   }, [activeCategory, addToast, trackView]);
 
   useEffect(() => {
+    if (hasFetchedInitial.current) return;
     const cacheKey = getCacheKey('All', { category: 'All', page: 1, fastSync: true });
     const cached = getCachedData(cacheKey);
     if (cached) {
@@ -347,7 +334,7 @@ const App: React.FC = () => {
       loadCityEvents('All', { category: 'All', page: 1 });
     }
     updateWeather('Dallas');
-
+    hasFetchedInitial.current = true;
     // Test Firestore Connection once auth is ready
     if (isAuthReady) {
       const testConnection = async () => {
@@ -445,9 +432,6 @@ const App: React.FC = () => {
       setActiveCategory('All');
       setSearchQuery('');
       setPage(1);
-      // Set to city seeds immediately to avoid empty state and "Sync failed" toast
-      const seeds = SEED_EVENTS[city.id] || [];
-      setAllEvents(seeds);
     });
     window.scrollTo({ top: 0, behavior: 'instant' });
     loadCityEvents(city.name, { category: 'All', page: 1 });
@@ -476,11 +460,6 @@ const App: React.FC = () => {
     setActiveCategory('All');
     setPage(1);
     trackView('search', query);
-    const searchSeeds = GLOBAL_SEED_EVENTS.filter(e => e.title.toLowerCase().includes(query.toLowerCase()));
-    // If we have seeds, show them immediately
-    if (searchSeeds.length > 0) {
-      setAllEvents(searchSeeds);
-    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
     loadCityEvents('All', { keyword: query, category: 'All', page: 1 });
   }, [loadCityEvents]);
@@ -488,7 +467,6 @@ const App: React.FC = () => {
   const handleHome = useCallback(() => {
     setView(AppView.LANDING);
     setSelectedCity(null);
-    setAllEvents(GLOBAL_SEED_EVENTS);
     setPage(1);
     setActiveCategory('All');
     setSearchQuery('');
@@ -609,7 +587,7 @@ const App: React.FC = () => {
 
       {view === AppView.LANDING && (
         <div className="animate-in fade-in duration-700">
-          <section className="relative h-[85vh] flex items-center justify-center overflow-hidden bg-white">
+          <section className="relative h-[95vh] flex items-center justify-center overflow-hidden bg-white">
             <div className="absolute inset-0 hero-gradient" />
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-7xl px-4 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center z-10">
               <motion.div 
@@ -857,6 +835,8 @@ const App: React.FC = () => {
               </AnimatePresence>
             </div>
 
+            {
+              filteredEvents.length > 0 && (
             <div className="mt-20 flex flex-col items-center justify-center">
 
               <motion.button
@@ -873,6 +853,8 @@ const App: React.FC = () => {
                 {isPageLoading ? 'Synchronizing...' : hasMore ? 'Load More Signals' : 'All Signals Synchronized'}
               </motion.button>
             </div>
+              )
+            }
           </div>
         </div>
       )}
