@@ -3,16 +3,25 @@ import * as XLSX from "xlsx";
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: JSON.stringify({ error: "Method not allowed" }) };
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: "Method not allowed" }),
+    };
   }
 
   try {
     // 1. Get uploaded file (Netlify sends multipart body as base64)
     if (!event.body) {
-      return { statusCode: 400, body: JSON.stringify({ error: "No file uploaded" }) };
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "No file uploaded" }),
+      };
     }
 
-    const file = Buffer.from(event.body, event.isBase64Encoded ? "base64" : "utf8");
+    const file = Buffer.from(
+      event.body,
+      event.isBase64Encoded ? "base64" : "utf8",
+    );
 
     // 2. Read workbook from buffer
     const workbook = XLSX.read(file, { type: "buffer" });
@@ -22,8 +31,11 @@ export const handler: Handler = async (event) => {
     const worksheet = workbook.Sheets[sheetName];
 
     // 4. Convert sheet to JSON, filtering out completely empty rows
-    const jsonData = (XLSX.utils.sheet_to_json(worksheet, { defval: "" }) as any[]).filter((row: any) =>
-      Object.values(row).some((val) => val !== "" && val !== null && val !== undefined)
+    const jsonData = (XLSX.utils.sheet_to_json(worksheet) as any[]).filter(
+      (row: any) =>
+        Object.values(row).some(
+          (val) => val !== "" && val !== null && val !== undefined,
+        ),
     );
 
     return {
