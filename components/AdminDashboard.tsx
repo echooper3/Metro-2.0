@@ -66,10 +66,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
     count: count as number
   })).sort((a, b) => b.count - a.count) : [];
 
-  const eventData = stats?.eventViews ? Object.entries(stats.eventViews).map(([name, count]) => ({
-    name: name.replace(/_/g, ' '),
-    count: count as number
-  })).sort((a, b) => b.count - a.count).slice(0, 5) : [];
+const eventData = stats?.eventViews 
+  ? Object.entries(stats.eventViews)
+      .map(([name, count]) => {
+        // If analytics tracking accidentally wrote a Firestore Map/Object instead of an int, 
+        // fallback to 0 or extract a count property if nested.
+        const safeCount = typeof count === 'object' && count !== null
+          ? 0  // Or parse an internal key if needed: (count as any).views || 0
+          : (count as number);
+
+        return {
+          name: name.replace(/_/g, ' '),
+          count: safeCount
+        };
+      })
+      // Filter out any 0 or broken records if you don't want them appearing in the Top 5
+      .filter(item => item.count > 0) 
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5) 
+  : [];
 
   const categoryData = stats?.categoryViews ? Object.entries(stats.categoryViews).map(([name, count]) => ({
     name: name.replace(/_/g, ' '),
