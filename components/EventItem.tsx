@@ -77,7 +77,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
     >
       <div className="relative aspect-[4/3] overflow-hidden">
         <img 
-          src={event.imageUrl} 
+          src={event.imageUrl || `https://picsum.photos/seed/${encodeURIComponent(event.id)}/800/600`} 
           alt={event.title}
           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
           referrerPolicy="no-referrer"

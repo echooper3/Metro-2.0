@@ -94,8 +94,9 @@ app.post("/api/read-sheet", upload.single("file"), async (req: any, res: any) =>
     const worksheet = workbook.Sheets[sheetName];
 
     // 4. Convert sheet to JSON
-    const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
+const jsonData = (XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false }) as any[]).filter((row: any) =>
+  Object.values(row).some((val) => val !== "" && val !== null && val !== undefined)
+);
     return res.json({
       message: "Success",
       data: jsonData,
