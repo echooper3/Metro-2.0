@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Metropolitan user identity and preferences",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "avatar": { "type": "string" },
+        "phone": { "type": "string" },
+        "birthday": { "type": "string" },
+        "zipCode": { "type": "string" },
+        "savedEvents": { "type": "array", "items": { "$ref": "Event" } },
+        "syncStats": {
+          "type": "object",
+          "properties": {
+            "lastSyncAt": { "type": "string", "format": "date-time" },
+            "totalSyncs": { "type": "number" }
+          }
+        },
+        "preferences": {
+          "type": "object",
+          "properties": {
+            "favoriteCategories": { "type": "array", "items": { "type": "string" } },
+            "favoriteCity": { "type": "string" },
+            "hasCompletedOnboarding": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["id", "name", "email"]
+    },
+    "Event": {
+      "title": "Metropolitan Event",
+      "description": "A broadcasted metropolitan signal",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "venue": { "type": "string" },
+        "location": { "type": "string" },
+        "cityName": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "price": { "type": "string" },
+        "ageRestriction": { "type": "string" },
+        "userId": { "type": "string" },
+        "userCreated": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "description", "date", "venue", "cityName"]
+    },
+    "Stats": {
+      "title": "Metropolitan Stats",
+      "description": "Traffic and engagement metrics",
+      "type": "object",
+      "properties": {
+        "totalViews": { "type": "number" },
+        "cityViews": { "type": "object" },
+        "eventViews": { "type": "object" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Metropolitan event signals"
+    },
+    "/stats/{statId}": {
+      "schema": "Stats",
+      "description": "Global traffic metrics"
+    }
+  }
+}
