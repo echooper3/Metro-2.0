@@ -426,7 +426,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <button
                       key={cat}
                       onClick={() => toggleCategory(cat)}
-                      className={`flex flex-col items-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
+                      className={`flex flex-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
                         user.preferences.favoriteCategories.includes(cat)
                           ? 'border-orange-600 bg-orange-50 text-orange-600 shadow-xl shadow-orange-600/10'
                           : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
