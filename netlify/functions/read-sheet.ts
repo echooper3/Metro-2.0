@@ -48,9 +48,9 @@ export const handler: Handler = async (event) => {
     const worksheet = workbook.Sheets[sheetName];
 
     // 4. Convert sheet to JSON, filtering out completely empty rows
-const jsonData = (XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false }) as any[]).filter((row: any) =>
-  Object.values(row).some((val) => val !== "" && val !== null && val !== undefined)
-);
+    const jsonData = (XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false }) as any[]).filter((row: any) =>
+      Object.values(row).some((val) => val !== "" && val !== null && val !== undefined)
+    );
 
     return {
       statusCode: 200,

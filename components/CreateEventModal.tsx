@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { CATEGORIES, CITIES } from '../constants';
 import { EventActivity, Category } from '../types';
+import { searchPlaces } from '../services/geminiService';
+import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -152,7 +153,10 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
 
     try {
       const docRef = await addDoc(collection(db, 'events'), finalEvent);
-      onSave({ ...finalEvent, id: docRef.id });
+      onSave({
+        ...finalEvent,
+        id: docRef.id
+      });
       onClose();
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'events');
@@ -161,99 +165,94 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     }
   };
 
-  const getSuggestionIcon = (type: LocationSuggestion['type']) => {
-    switch (type) {
-      case 'venue': return <Target className="w-4 h-4 text-orange-500" />;
-      case 'city': return <MapPin className="w-4 h-4 text-black" />;
-      default: return <MapPin className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
-  const inputClasses = "w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all placeholder:text-gray-300";
-  const labelClasses = "text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block";
+  const inputClasses = "w-full pl-6 pr-6 py-5 bg-gray-50 border-2 border-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:outline-none focus:bg-white focus:border-black placeholder-gray-300 text-gray-900 transition-all";
+  const labelClasses = "block text-[8px] font-black uppercase tracking-widest text-gray-400 mb-2";
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/90 backdrop-blur-md" 
-        onClick={onClose} 
+        onClick={onClose}
+        className="absolute inset-0 bg-white/80 backdrop-blur-xl"
       />
+
       <motion.div 
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0, y: 20 }}
-        className="relative bg-white rounded-[3rem] w-full max-w-2xl p-10 md:p-16 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
+        className="relative bg-white rounded-[3rem] w-full max-w-4xl p-10 md:p-16 shadow-2xl max-h-[90vh] overflow-y-auto scrollbar-hide"
       >
         <button onClick={onClose} className="absolute top-10 right-10 p-3 bg-gray-100 hover:bg-black hover:text-white rounded-2xl transition-all z-10">
           <X className="w-6 h-6" />
         </button>
-        
+
         <header className="mb-12">
-          <div className="inline-flex items-center space-x-2 px-4 py-2 bg-orange-50 rounded-full mb-4">
+          <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-full mb-4">
             <Sparkles className="w-3 h-3 text-orange-600" />
-            <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Community Portal</span>
+            <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Local Broadcast</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Post an Event</h2>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Broadcast New Signal</h2>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-2">Publish an event to the metropolitan intelligence network</p>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-8">
-          <div className="space-y-2">
-            <label className={labelClasses}>Cover Image</label>
-            <div 
-              onClick={() => !imagePreview && !isCompressing && fileInputRef.current?.click()}
-              className={`relative h-60 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${imagePreview ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
-            >
-              {isCompressing ? (
-                <div className="text-center">
-                  <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Optimizing Metropolitan Signal...</p>
-                </div>
-              ) : imagePreview ? (
-                <>
-                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-all" />
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setImagePreview(null); }} className="absolute top-4 right-4 p-3 bg-white/20 backdrop-blur-md text-white rounded-2xl hover:bg-red-600 transition-all">
-                    <X className="w-5 h-5" />
-                  </button>
-                </>
-              ) : (
-                <div className="text-center p-8">
-                  <div className="w-16 h-16 bg-gray-100 text-black rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 rotate-3 group-hover:rotate-0 transition-transform">
-                    <ImageIcon className="w-8 h-8" />
-                  </div>
-                  <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Add High-Res Event Photo</p>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2">JPG, PNG up to 10MB</p>
-                </div>
-              )}
-              <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
-            </div>
-          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className={labelClasses}>Event Title</label>
+                <input required maxLength={140} type="text" className={inputClasses} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="e.g. Cain's Ballroom Jazz Festival" />
+              </div>
 
-          <div className="space-y-2">
-            <label className={labelClasses}>Event Title</label>
-            <input required type="text" maxLength={140} className={inputClasses} value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Give your event a bold name" />
-          </div>
+              <div className="space-y-2">
+                <label className={labelClasses}>Metropolitan Hub</label>
+                <select className={inputClasses} value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})}>
+                  {CITIES.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className={labelClasses}>Category</label>
-              <select className={inputClasses} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})}>
-                {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <div className="space-y-2">
+                <label className={labelClasses}>Category</label>
+                <select className={inputClasses} value={formData.category} onChange={e => setFormData({...formData, category: e.target.value as Category})}>
+                  {CATEGORIES.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className={labelClasses}>City Hub</label>
-              <select className={inputClasses} value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})}>
-                {CITIES.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+
+            <div className="space-y-2 h-full">
+              <label className={labelClasses}>Cover Banner (Compressed JPG)</label>
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="h-[238px] border-2 border-dashed border-gray-100 hover:border-black rounded-[2rem] flex flex-col items-center justify-center cursor-pointer transition-all bg-gray-50 hover:bg-white overflow-hidden relative group"
+              >
+                {imagePreview ? (
+                  <>
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                      <ImageIcon className="w-8 h-8 text-white" />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {isCompressing ? (
+                      <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mb-4" />
+                    ) : (
+                      <ImageIcon className="w-8 h-8 text-gray-300 mb-4 group-hover:scale-110 transition-transform" />
+                    )}
+                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                      {isCompressing ? 'Optimizing Assets...' : 'Upload Image'}
+                    </span>
+                  </>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
             </div>
           </div>
 
           <div className="space-y-2 relative">
-            <div className="flex items-center justify-between ml-1 mb-2">
+            <div className="flex justify-between items-center">
               <label className={labelClasses}>Venue & Address</label>
               <motion.button 
                 whileHover={{ scale: 1.05 }}
@@ -398,6 +397,18 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
       </motion.div>
     </div>
   );
+};
+
+// Helper to assign icons for suggestions based on Nominatim types
+const getSuggestionIcon = (type: string) => {
+  switch (type) {
+    case 'venue':
+      return <Sparkles className="w-4 h-4 text-orange-500" />;
+    case 'city':
+      return <Target className="w-4 h-4 text-blue-500" />;
+    default:
+      return <MapPin className="w-4 h-4 text-gray-400" />;
+  }
 };
 
 export default CreateEventModal;

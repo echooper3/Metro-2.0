@@ -56,6 +56,31 @@ service cloud.firestore {
              (!('zipCode' in data) || data.zipCode is string);
     }
 
+    function isValidEvent(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
+             data.category is string &&
+             data.description is string && data.description.size() <= 3000 &&
+             data.cityName is string &&
+             data.venue is string &&
+             data.userId is string &&
+             data.userCreated is bool &&
+             (!('imageUrl' in data) || data.imageUrl is string) &&
+             (!('price' in data) || data.price is string);
+    }
+
+    function isValidAd(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
+             data.tag is string && data.tag.size() <= 50 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.cta is string && data.cta.size() <= 50 &&
+             data.image is string && data.image.size() <= 1000 &&
+             data.url is string && data.url.size() <= 1000 &&
+             data.cityId is string &&
+             data.clicks is int && data.clicks >= 0 &&
+             data.impressions is int && data.impressions >= 0;
+    }
+
+
     // ===============================================================
     // Rules (Pillar 4)
     // ===============================================================
@@ -73,6 +98,56 @@ service cloud.firestore {
                     (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats'])) &&
                     !('role' in incoming())) 
                     || isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if true; // Public directory
+      
+      // Pillar 8: Secure List Queries
+      allow list: if true; 
+
+      allow create: if isVerifiedUser() && isValidId(eventId) &&
+                    isValidEvent(incoming()) &&
+                    incoming().userId == request.auth.uid &&
+                    incoming().userCreated == true &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if (isSignedIn() && existing().userId == request.auth.uid &&
+                    isValidEvent(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    // Action: Content Edit
+                    incoming().diff(existing()).affectedKeys().hasAll(['updatedAt']) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'date', 'time', 'venue', 'location', 'imageUrl', 'price', 'ageRestriction', 'updatedAt']) &&
+                    incoming().updatedAt == request.time)
+                    || isAdmin();
+
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+
+    match /stats/{statId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && isValidId(statId) && statId == 'traffic';
+      allow update: if isSignedIn() && isValidId(statId) && statId == 'traffic' &&
+                    incoming().diff(existing()).affectedKeys().hasAny(['totalViews', 'cityViews', 'eventViews', 'categoryViews', 'searchQueries', 'eventSaves', 'lastUpdated']) &&
+                    incoming().lastUpdated == request.time;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && request.auth.uid == adminId;
+    }
+
+    match /ads/{adId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(adId) && isValidAd(incoming());
+      allow update: if (incoming().diff(existing()).affectedKeys().hasOnly(['clicks', 'impressions']) &&
+                        incoming().clicks >= existing().clicks &&
+                        incoming().impressions >= existing().impressions)
+                    || (isAdmin() && isValidAd(incoming()));
+      allow delete: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

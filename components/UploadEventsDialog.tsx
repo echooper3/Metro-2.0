@@ -2,13 +2,14 @@ import { Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FileSpreadsheet, Loader2, CheckCircle2 } from "lucide-react";
 
+// Assuming these props or equivalent states are available in your parent component
 interface EventsUploadDialogProps {
   eventsUploadDialogOpen: boolean;
   setEventsUploadDialogOpen: (open: boolean) => void;
   isProcessing: boolean;
   uploadSuccess: boolean;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  containerVariants: any;
+  containerVariants: any; // Your custom framer-motion variants
 }
 
 export default function EventsUploadDialog({

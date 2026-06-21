@@ -1,13 +1,19 @@
 [build]
-  command = "npm run build"
+  command = "vite build"
   publish = "dist"
-
+  functions = "netlify/functions"
+ 
+[[redirects]]
+  from = "/api/ticketmaster"
+  to = "/.netlify/functions/ticketmaster"
+  status = 200
+ 
+[[redirects]]
+  from = "/api/read-sheet"
+  to = "/.netlify/functions/read-sheet"
+  status = 200
+ 
 [[redirects]]
   from = "/*"
   to = "/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
   status = 200

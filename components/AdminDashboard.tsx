@@ -5,9 +5,9 @@ import {
   BarChart3, Search, Heart, LayoutGrid, X, Trash2, Megaphone, PlusCircle, 
   Eye, MousePointerClick, Percent, RefreshCw, CheckCircle2, AlertCircle 
 } from 'lucide-react';
-import { auth, db } from '../firebase';
+import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
-  collection, onSnapshot, doc, setDoc, 
+  collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, 
   serverTimestamp, updateDoc, increment, writeBatch, deleteDoc 
 } from 'firebase/firestore';
 import { UserProfile } from '../types';
@@ -43,13 +43,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState('');
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Manage the Upload States
   const [isProcessing, setIsProcessing] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+
+  // Tab State
   const [activeTab, setActiveTab] = useState<'analytics' | 'ads'>('analytics');
+
+  // Ads Management State
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedAdCityFilter, setSelectedAdCityFilter] = useState<string>('all');
   const [isPublishingAd, setIsPublishingAd] = useState(false);
 
+  // Form Fields State
   const [newAdTitle, setNewAdTitle] = useState('');
   const [newAdTag, setNewAdTag] = useState('');
   const [newAdDescription, setNewAdDescription] = useState('');
@@ -59,6 +66,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [newAdCityId, setNewAdCityId] = useState('general');
 
   useEffect(() => {
+    // Fetch traffic stats
     const unsubscribeStats = onSnapshot(doc(db, 'stats', 'traffic'), (doc) => {
       if (doc.exists()) {
         setStats(doc.data());
@@ -69,18 +77,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
       setLoading(false);
     });
 
+    // Fetch user count
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       setUserCount(snapshot.size);
     }, (error) => {
       console.error('Firestore onSnapshot Error [users]:', error);
     });
 
+    // Fetch event count
     const unsubscribeEvents = onSnapshot(collection(db, 'events'), (snapshot) => {
       setEventCount(snapshot.size);
     }, (error) => {
       console.error('Firestore onSnapshot Error [events]:', error);
     });
 
+    // Fetch ads in real time
     const unsubscribeAds = onSnapshot(collection(db, 'ads'), (snapshot) => {
       const adsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ad));
       setAds(adsData);
@@ -123,6 +134,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
         createdAt: serverTimestamp()
       });
       
+      // Reset Form Fields
       setNewAdTitle('');
       setNewAdTag('');
       setNewAdDescription('');
@@ -174,7 +186,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
           title: "Bricktown Canal",
           description: "Navigate the heart of Oklahoma City. Scenic water taxi tours daily through the historic district.",
           cta: "Book Taxi",
-          image: "https://images.unsplash.com/photo-1543168256-418811576931?auto=format&fit=crop&q=80&w=800",
+          image: "https://images.unsplash.com/photo-1543168256-418811576931?auto=format&fit=crop&q=80&w=1200",
           tag: "OKC Classic",
           cityId: "okc",
           url: "https://www.bricktownwatertaxi.com"
