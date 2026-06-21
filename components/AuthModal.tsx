@@ -99,27 +99,30 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       let msg = "Authentication failed";
       if (err.code === 'auth/user-not-found') msg = "No account found with this email.";
       else if (err.code === 'auth/wrong-password') msg = "Incorrect password.";
-      else if (err.code === 'auth/email-already-in-use') msg = "Email already in use.";
-      else if (err.code === 'auth/weak-password') msg = "Password must be at least 6 characters.";
+      else if (err.code === 'auth/email-already-in-use') msg = "An account already exists with this email.";
+      else if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
+      else if (err.code === 'auth/operation-not-allowed') msg = "Email/Password sign-in is not enabled. Please contact the administrator.";
+      else if (err.code === 'auth/invalid-email') msg = "Invalid email address format.";
+      else if (err.code === 'permission-denied') msg = "Database access denied. Please try again.";
+      else if (err.message) msg = err.message;
       setError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const inputClasses = "w-full pl-12 pr-6 py-5 bg-gray-50 border-2 border-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest focus:outline-none focus:bg-white focus:border-black placeholder-gray-300 text-gray-900 transition-all";
-  const labelClasses = "block text-[8px] font-black uppercase tracking-widest text-gray-400 mb-2";
+  const inputClasses = "w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-12 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all placeholder:text-gray-300";
+  const labelClasses = "text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/90 backdrop-blur-md" 
         onClick={onClose}
-        className="absolute inset-0 bg-white/80 backdrop-blur-xl"
       />
-
       <motion.div 
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
