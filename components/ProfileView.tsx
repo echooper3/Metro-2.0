@@ -426,7 +426,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <button
                       key={cat}
                       onClick={() => toggleCategory(cat)}
-                      className={`flex flex-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
+                      className={`flex flex-col items-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
                         user.preferences.favoriteCategories.includes(cat)
                           ? 'border-orange-600 bg-orange-50 text-orange-600 shadow-xl shadow-orange-600/10'
                           : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
@@ -575,7 +575,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
-                      <span className={`text-lg font-black text-emerald-600 uppercase tracking-tight italic ${apiStatus.gemini ? 'text-emerald-600' : 'text-red-600'}`}>
+                      <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.gemini ? 'text-emerald-600' : 'text-red-600'}`}>
                         {apiStatus.gemini ? 'Operational' : 'Offline (Missing Key)'}
                       </span>
                     </div>
@@ -792,9 +792,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </ErrorBoundary>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
