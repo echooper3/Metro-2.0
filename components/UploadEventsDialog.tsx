@@ -1,4 +1,4 @@
-import { Suspense } from "react";
+import { Suspense } from "Suspense";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, FileSpreadsheet, Loader2, CheckCircle2 } from "lucide-react";
 

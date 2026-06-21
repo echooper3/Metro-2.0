@@ -121,7 +121,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-black/90 backdrop-blur-md" 
-        onClick={onClose}
+        onClick={onClose} 
       />
       <motion.div 
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
