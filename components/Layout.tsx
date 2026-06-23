@@ -99,7 +99,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
                 className="flex items-center px-6 py-3.5 text-[10px] font-black uppercase tracking-widest text-gray-900 bg-white border-2 border-gray-100 rounded-2xl hover:border-black transition-all"
               >
                 <Plus className="w-4 h-4 mr-2 stroke-[3px]" />
-                Post Signal
+                Post Event
               </motion.button>
               
               {isLoggedIn ? (
@@ -146,7 +146,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
             >
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={onPostEvent} className="py-4 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest">Post Signal</button>
+                  <button onClick={onPostEvent} className="py-4 bg-gray-50 rounded-2xl text-[10px] font-black uppercase tracking-widest">Post Event</button>
                   {isAdmin && onAdmin && (
                     <button onClick={onAdmin} className="py-4 bg-orange-50 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest">Admin Hub</button>
                   )}
