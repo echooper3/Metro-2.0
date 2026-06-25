@@ -6,7 +6,7 @@ import { CITIES, CATEGORIES } from '../constants';
 
 interface OnboardingFlowProps {
   user: UserProfile | null;
-  onComplete: (data: { favoriteCity: string; favoriteCategories: Category[] }) => void;
+  onComplete: (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => void;
   onClose: () => void;
 }
 
@@ -14,8 +14,9 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
   const [step, setStep] = useState(1);
   const [selectedCity, setSelectedCity] = useState<string>(user?.preferences?.favoriteCity || '');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>(user?.preferences?.favoriteCategories || []);
+  const [isOrganizer, setIsOrganizer] = useState<boolean>(user?.isOrganizer || false);
 
-  const totalSteps = 4;
+  const totalSteps = 5;
 
   const toggleCategory = (cat: Category) => {
     if (cat === 'All') return;
@@ -36,7 +37,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
   const handleFinish = () => {
     onComplete({
       favoriteCity: selectedCity,
-      favoriteCategories: selectedCategories
+      favoriteCategories: selectedCategories,
+      isOrganizer: isOrganizer
     });
   };
 
@@ -218,6 +220,46 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                 animate="center"
                 exit="exit"
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="space-y-8"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-black text-white rounded-xl flex items-center justify-center">
+                    <Target className="w-5 h-5" />
+                  </div>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Choose Role</h2>
+                </div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Would you like to register as an event organizer?</p>
+                
+                <div className="flex items-center justify-between p-8 bg-gray-50 rounded-[2rem] border-2 border-transparent hover:border-black transition-all gap-6">
+                  <div className="text-left">
+                    <h4 className="text-xs font-black text-gray-900 uppercase">Join as Organizer</h4>
+                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">This grants you the ability to establish organization profiles and post events under organization brands.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsOrganizer(!isOrganizer)}
+                    className={`w-14 h-8 rounded-full transition-all relative flex items-center px-1 shrink-0 ${isOrganizer ? 'bg-orange-600' : 'bg-gray-200'} cursor-pointer`}
+                  >
+                    <motion.div 
+                      layout
+                      className="w-6 h-6 bg-white rounded-full shadow-md"
+                      style={{ x: isOrganizer ? 24 : 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {step === 5 && (
+              <motion.div
+                key="step5"
+                custom={1}
+                variants={stepVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className="space-y-8 text-center"
               >
                 <div className="w-20 h-20 bg-orange-500 text-white rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-xl shadow-orange-200">
@@ -239,6 +281,10 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                     <div className="flex justify-between items-center">
                       <span className="text-[9px] font-black uppercase text-gray-400">Interests</span>
                       <span className="text-[9px] font-black uppercase text-black">{selectedCategories.length} Locked</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] font-black uppercase text-gray-400">Account Role</span>
+                      <span className="text-[9px] font-black uppercase text-black">{isOrganizer ? 'Organizer' : 'Member'}</span>
                     </div>
                   </div>
                 </div>

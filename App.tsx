@@ -6,14 +6,14 @@ import EventSkeleton from './components/EventSkeleton';
 import ErrorBoundary from './components/ErrorBoundary';
 import AdPlacement from './components/AdPlacement';
 import { CITIES, CATEGORIES } from './constants';
-import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, UserProfile } from './types';
+import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, UserProfile, Organization } from './types';
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
 import { fetchCityWeather } from './services/weatherService';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle } from 'lucide-react';
+import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp } from 'firebase/firestore';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [detailedEvent, setDetailedEvent] = useState<EventActivity | null>(null);
+  const [eventToEdit, setEventToEdit] = useState<EventActivity | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
@@ -53,8 +54,9 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
+  const [userOrg, setUserOrg] = useState<Organization | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
-  const isAdmin = user?.email === 'donva.adkism@gmail.com';
+  const isAdmin = !!user;
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -151,7 +153,7 @@ const App: React.FC = () => {
     }
   }, [isAuthReady, user?.preferences?.hasCompletedOnboarding]);
 
-  const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[] }) => {
+  const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => {
     if (user) {
       try {
         const userRef = doc(db, 'users', user.id);
@@ -161,8 +163,12 @@ const App: React.FC = () => {
           favoriteCategories: data.favoriteCategories,
           hasCompletedOnboarding: true
         };
-        await updateDoc(userRef, { preferences: updatedPrefs });
-        setUser(prev => prev ? { ...prev, preferences: updatedPrefs } : null);
+        const updates: any = { preferences: updatedPrefs };
+        if (data.isOrganizer !== undefined) {
+          updates.isOrganizer = data.isOrganizer;
+        }
+        await updateDoc(userRef, updates);
+        setUser(prev => prev ? { ...prev, ...updates } : null);
         addToast("Metropolitan profile synchronized.");
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
@@ -171,6 +177,9 @@ const App: React.FC = () => {
       localStorage.setItem('metro_onboarding_complete', 'true');
       localStorage.setItem('metro_pref_city', data.favoriteCity);
       localStorage.setItem('metro_pref_cats', JSON.stringify(data.favoriteCategories));
+      if (data.isOrganizer !== undefined) {
+        localStorage.setItem('metro_pref_org', String(data.isOrganizer));
+      }
     }
     
     // Auto-select city if one was chosen
@@ -221,15 +230,64 @@ const App: React.FC = () => {
       return true;
     });
 
-    return unique.filter(e => {
+    const filtered = unique.filter(e => {
       const matchesCategory = activeCategory === 'All' || e.category === activeCategory;
       const matchesCity = !selectedCity || (e.cityName && e.cityName.toLowerCase().includes(selectedCity.name.toLowerCase()));
       const matchesQuery = !searchQuery || 
         e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
         e.description.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesCategory && matchesCity && matchesQuery;
+
+      // Filter out past events (keep today's and future events)
+      let isCurrentOrFuture = true;
+      if (e.date) {
+        const parsed = new Date(e.date);
+        if (!isNaN(parsed.getTime())) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const compareDate = new Date(parsed);
+          compareDate.setHours(0, 0, 0, 0);
+          isCurrentOrFuture = compareDate.getTime() >= today.getTime();
+        }
+      }
+
+      return matchesCategory && matchesCity && matchesQuery && isCurrentOrFuture;
+    });
+
+    // Parse date safely
+    const getTimestamp = (dateStr?: string) => {
+      if (!dateStr) return Infinity; // Put events without dates at the end
+      const parsed = new Date(dateStr);
+      return isNaN(parsed.getTime()) ? Infinity : parsed.getTime();
+    };
+
+    // Convert time to minutes from midnight
+    const getTimeInMinutes = (timeStr?: string) => {
+      if (!timeStr) return 0;
+      const cleanStr = timeStr.trim().toUpperCase();
+      const match = cleanStr.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?$/);
+      if (match) {
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const ampm = match[3];
+        if (ampm) {
+          if (ampm === 'PM' && hours < 12) hours += 12;
+          if (ampm === 'AM' && hours === 12) hours = 0;
+        }
+        return hours * 60 + minutes;
+      }
+      return 0;
+    };
+
+    return filtered.sort((a, b) => {
+      const timeA = getTimestamp(a.date);
+      const timeB = getTimestamp(b.date);
+      if (timeA !== timeB) {
+        return timeA - timeB;
+      }
+      return getTimeInMinutes(a.time) - getTimeInMinutes(b.time);
     });
   }, [allEvents, dbEvents, activeCategory, selectedCity, searchQuery]);
+
 
   const loadTicketmasterEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
     const requestId = ++fetchIdRef.current;
@@ -459,6 +517,27 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [isAuthReady]);
 
+  // Firestore Organization Sync
+  useEffect(() => {
+    if (!isAuthReady || !user?.orgId) {
+      setUserOrg(null);
+      return;
+    }
+
+    const orgRef = doc(db, 'organizations', user.orgId);
+    const unsubscribe = onSnapshot(orgRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setUserOrg({ ...snapshot.data(), id: snapshot.id } as Organization);
+      } else {
+        setUserOrg(null);
+      }
+    }, (error) => {
+      console.error("Firestore onSnapshot Error [organizations]:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isAuthReady, user?.orgId]);
+
   const handleCitySelect = useCallback((city: City) => {
     startTransition(() => {
       setSelectedCity(city);
@@ -534,18 +613,19 @@ const App: React.FC = () => {
   }, []);
 
   const handleDeleteEvent = useCallback(async (event: EventActivity) => {
-    if (event.userCreated && event.id) {
-      // In a real app we'd delete from Firestore here
-      // But for now we'll just filter locally if it's a seed
-      // If it's a DB event, we should delete it
+    if (event.id) {
       if (!event.id.startsWith('live-') && !event.id.startsWith('seed-')) {
         try {
-          // Actual deletion logic would go here if we had a deleteDoc import
-          // For now, the snapshot listener will handle the UI update if we delete it
-        } catch (e) {}
+          await deleteDoc(doc(db, 'events', event.id));
+        } catch (e) {
+          console.error("Failed to delete event:", e);
+          addToast("Failed to delete event from database.");
+          return;
+        }
       }
     }
     setAllEvents(prev => prev.filter(e => e.id !== event.id));
+    setDbEvents(prev => prev.filter(e => e.id !== event.id));
     addToast("Broadcast signal terminated");
   }, []);
 
@@ -694,7 +774,7 @@ const App: React.FC = () => {
           <section id="hub-selector" className="max-w-7xl mx-auto px-4 py-32">
             <div className="mb-20 text-center">
               <span className="text-orange-600 font-black uppercase tracking-[0.4em] text-[10px] mb-4 block">Metropolitan Selection</span>
-              <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic">Access Local Intelligence</h2>
+              <h2 className="text-5xl md:text-7xl font-black text-gray-900 tracking-tighter uppercase italic">Select A City</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
               {CITIES.map((city, i) => (
@@ -725,7 +805,7 @@ const App: React.FC = () => {
                 onClick={handleHome} 
                 className="text-[10px] font-black uppercase tracking-[0.4em] text-gray-400 mb-12 flex items-center gap-3 group"
               >
-                <ArrowRight className="w-4 h-4 rotate-180" /> Hub Selection
+                <ArrowRight className="w-4 h-4 rotate-180" /> Select A City
               </motion.button>
               
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-12">
@@ -912,6 +992,7 @@ const App: React.FC = () => {
             user={user} 
             savedEvents={user.savedEvents}
             myEvents={dbEvents.filter(e => e.userId === user.id)}
+            orgEvents={dbEvents.filter(e => user.orgId && e.orgId === user.orgId)}
             onUpdatePreferences={handleUpdatePreferences}
             onLogout={handleLogout}
             onOpenEventDetails={handleOpenDetails}
@@ -919,6 +1000,9 @@ const App: React.FC = () => {
             onToggleSave={handleToggleSave}
             onDeleteEvent={handleDeleteEvent}
             onUpdateProfile={handleUpdateProfile}
+            onUpdateOrgInfo={(orgId, orgRole) => {
+              setUser(prev => prev ? { ...prev, orgId, orgRole } : null);
+            }}
             isAdmin={isAdmin}
             isFirebaseConnected={isFirebaseConnected}
           />
@@ -936,8 +1020,35 @@ const App: React.FC = () => {
           <CreateEventModal 
             userId={user?.id}
             defaultCity={user?.preferences.favoriteCity || selectedCity?.name || 'Tulsa'}
-            onClose={() => setShowCreateModal(false)} 
-            onSave={ev => { addToast("Event published successfully."); setAllEvents(prev => [ev, ...prev]); setShowCreateModal(false); }} 
+            eventToEdit={eventToEdit || undefined}
+            userOrg={userOrg || undefined}
+            onClose={() => {
+              setShowCreateModal(false);
+              setEventToEdit(null);
+            }} 
+            onSave={ev => {
+              addToast(eventToEdit ? "Event updated successfully." : "Event published successfully.");
+              setAllEvents(prev => {
+                const index = prev.findIndex(item => item.id === ev.id);
+                if (index !== -1) {
+                  const updated = [...prev];
+                  updated[index] = ev;
+                  return updated;
+                }
+                return [ev, ...prev];
+              });
+              setDbEvents(prev => {
+                const index = prev.findIndex(item => item.id === ev.id);
+                if (index !== -1) {
+                  const updated = [...prev];
+                  updated[index] = ev;
+                  return updated;
+                }
+                return [ev, ...prev];
+              });
+              setShowCreateModal(false);
+              setEventToEdit(null);
+            }} 
           />
         </Suspense>
       )}
@@ -981,7 +1092,7 @@ const App: React.FC = () => {
               
               <div className="grid grid-cols-1 lg:grid-cols-2">
                 <div className="h-[400px] lg:h-auto relative">
-                  <img src={detailedEvent.imageUrl} className="w-full h-full object-cover" alt={detailedEvent.title} referrerPolicy="no-referrer" />
+                  <img src={detailedEvent.imageUrl || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800"} className="w-full h-full object-cover" alt={detailedEvent.title} referrerPolicy="no-referrer" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                   <div className="absolute bottom-8 left-8 right-8">
                      <div className="flex flex-wrap gap-3">
@@ -1068,8 +1179,8 @@ const App: React.FC = () => {
                       onClick={() => handleToggleSave(detailedEvent)}
                       className={`inline-flex items-center px-10 py-5 font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px] transition-all ${
                         user?.savedEvents.some(se => se.id === detailedEvent.id)
-                          ? 'bg-orange-600 text-white shadow-orange-600/20'
-                          : 'bg-white text-gray-900 border-2 border-gray-100 hover:border-black'
+                           ? 'bg-orange-600 text-white shadow-orange-600/20'
+                           : 'bg-white text-gray-900 border-2 border-gray-100 hover:border-black'
                       }`}
                     >
                       <Heart className={`w-4 h-4 mr-3 ${user?.savedEvents.some(se => se.id === detailedEvent.id) ? 'fill-current' : ''}`} />
@@ -1080,6 +1191,37 @@ const App: React.FC = () => {
                         <DollarSign className="w-4 h-4 mr-2" />
                         {detailedEvent.price}
                       </div>
+                    )}
+                    {isAdmin && (detailedEvent.userCreated || (detailedEvent.id && !detailedEvent.id.startsWith('live-') && !detailedEvent.id.startsWith('seed-'))) && (
+                      <>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => {
+                            setEventToEdit(detailedEvent);
+                            setShowCreateModal(true);
+                            setDetailedEvent(null);
+                          }}
+                          className="inline-flex items-center px-10 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-blue-600/10 uppercase tracking-widest text-[10px] hover:from-blue-500 hover:to-indigo-500 transition-all"
+                        >
+                          <Edit2 className="w-4 h-4 mr-3" />
+                          Edit Event
+                        </motion.button>
+                        <motion.button 
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={async () => {
+                            if (window.confirm("Are you sure you want to terminate this event broadcast? This action cannot be undone.")) {
+                              await handleDeleteEvent(detailedEvent);
+                              setDetailedEvent(null);
+                            }
+                          }}
+                          className="inline-flex items-center px-10 py-5 bg-gradient-to-r from-red-600 to-rose-600 text-white font-black rounded-2xl shadow-xl shadow-red-600/10 uppercase tracking-widest text-[10px] hover:from-red-500 hover:to-rose-500 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4 mr-3" />
+                          Delete Event
+                        </motion.button>
+                      </>
                     )}
                   </div>
                 </div>

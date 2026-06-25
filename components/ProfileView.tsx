@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { UserProfile, EventActivity, Category, AppView } from '../types';
+import { UserProfile, EventActivity, Category, AppView, Organization } from '../types';
 import { CATEGORIES, CITIES } from '../constants';
 import EventItem from './EventItem';
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
+import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment, getDoc, setDoc, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import bulkEvents from '../src/data/events.json';
 import { 
   User, 
@@ -27,13 +27,17 @@ import {
   Lock,
   Eye,
   RefreshCw,
-  CheckCircle2
+  CheckCircle2,
+  Building2,
+  Users,
+  Globe
 } from 'lucide-react';
 
 interface ProfileViewProps {
   user: UserProfile;
   savedEvents: EventActivity[];
   myEvents: EventActivity[];
+  orgEvents: EventActivity[];
   onUpdatePreferences: (prefs: UserProfile['preferences']) => void;
   onLogout: () => void;
   onOpenEventDetails: (event: EventActivity) => void;
@@ -41,6 +45,7 @@ interface ProfileViewProps {
   onToggleSave: (event: EventActivity) => void;
   onDeleteEvent: (event: EventActivity) => void;
   onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => void;
+  onUpdateOrgInfo: (orgId?: string, orgRole?: 'owner' | 'member') => void;
   isAdmin?: boolean;
   isFirebaseConnected?: boolean | null;
 }
@@ -49,6 +54,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   user, 
   savedEvents, 
   myEvents,
+  orgEvents,
   onUpdatePreferences, 
   onLogout,
   onOpenEventDetails,
@@ -56,10 +62,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onToggleSave,
   onDeleteEvent,
   onUpdateProfile,
+  onUpdateOrgInfo,
   isAdmin,
   isFirebaseConnected
 }) => {
-  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'preferences' | 'settings' | 'privacy' | 'admin'>('saved');
+  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'org' | 'preferences' | 'settings' | 'privacy' | 'admin'>('saved');
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
   const [editPhone, setEditPhone] = useState(user.phone || '');
@@ -69,6 +76,187 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
   const [apiStatus, setApiStatus] = useState<{ ticketmaster: boolean, gemini: boolean, eventbrite?: boolean }>({ ticketmaster: false, gemini: false, eventbrite: false });
+
+  const [orgData, setOrgData] = useState<Organization | null>(null);
+  const [isLoadingOrg, setIsLoadingOrg] = useState(false);
+  const [allOrgs, setAllOrgs] = useState<Organization[]>([]);
+  const [isLoadingAllOrgs, setIsLoadingAllOrgs] = useState(false);
+  const [searchQueryOrgs, setSearchQueryOrgs] = useState('');
+  const [isCreatingOrg, setIsCreatingOrg] = useState(false);
+  const [isSubmittingOrg, setIsSubmittingOrg] = useState(false);
+
+  // Creation form fields
+  const [orgName, setOrgName] = useState('');
+  const [orgDesc, setOrgDesc] = useState('');
+  const [orgWebsite, setOrgWebsite] = useState('');
+  const [orgEmail, setOrgEmail] = useState(user.email || '');
+  const [orgPhone, setOrgPhone] = useState('');
+  const [orgLogoUrl, setOrgLogoUrl] = useState('');
+
+  // Fetch current user's organization
+  React.useEffect(() => {
+    if (user.orgId) {
+      const fetchOrg = async () => {
+        setIsLoadingOrg(true);
+        try {
+          const docSnap = await getDoc(doc(db, 'organizations', user.orgId!));
+          if (docSnap.exists()) {
+            setOrgData({ ...docSnap.data(), id: docSnap.id } as Organization);
+          }
+        } catch (err) {
+          console.error("Failed to fetch organization", err);
+        } finally {
+          setIsLoadingOrg(false);
+        }
+      };
+      fetchOrg();
+    } else {
+      setOrgData(null);
+    }
+  }, [user.orgId]);
+
+  // Fetch all organizations for joining
+  const fetchAllOrgs = async () => {
+    setIsLoadingAllOrgs(true);
+    try {
+      const querySnap = await getDocs(collection(db, 'organizations'));
+      const orgsList = querySnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Organization));
+      setAllOrgs(orgsList);
+    } catch (err) {
+      console.error("Failed to fetch all organizations", err);
+    } finally {
+      setIsLoadingAllOrgs(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (activeTab === 'org' && !user.orgId) {
+      fetchAllOrgs();
+    }
+  }, [activeTab, user.orgId]);
+
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgName || !orgDesc) return;
+    setIsSubmittingOrg(true);
+    try {
+      const orgId = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const uniqueOrgId = `${orgId}-${Math.floor(1000 + Math.random() * 9000)}`;
+      
+      const newOrg: Omit<Organization, 'id'> = {
+        name: orgName,
+        description: orgDesc,
+        website: orgWebsite || undefined,
+        email: orgEmail || undefined,
+        phone: orgPhone || undefined,
+        logoUrl: orgLogoUrl || `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
+        ownerId: user.id,
+        members: [user.id],
+        createdAt: serverTimestamp()
+      };
+
+      await setDoc(doc(db, 'organizations', uniqueOrgId), newOrg);
+      
+      // Update user document
+      await updateDoc(doc(db, 'users', user.id), {
+        orgId: uniqueOrgId,
+        orgRole: 'owner'
+      });
+
+      if (onUpdateOrgInfo) {
+        onUpdateOrgInfo(uniqueOrgId, 'owner');
+      }
+
+      alert("Organization profile created successfully!");
+      setIsCreatingOrg(false);
+    } catch (err) {
+      console.error("Failed to create organization:", err);
+      alert("Failed to create organization profile.");
+    } finally {
+      setIsSubmittingOrg(false);
+    }
+  };
+
+  const handleJoinOrg = async (org: Organization) => {
+    try {
+      // Add user to org members
+      await updateDoc(doc(db, 'organizations', org.id), {
+        members: arrayUnion(user.id)
+      });
+
+      // Update user profile
+      await updateDoc(doc(db, 'users', user.id), {
+        orgId: org.id,
+        orgRole: 'member'
+      });
+
+      if (onUpdateOrgInfo) {
+        onUpdateOrgInfo(org.id, 'member');
+      }
+
+      alert(`Successfully joined ${org.name}!`);
+    } catch (err) {
+      console.error("Failed to join organization:", err);
+      alert("Failed to join organization.");
+    }
+  };
+
+  const handleLeaveOrg = async () => {
+    if (!orgData) return;
+    if (orgData.ownerId === user.id) {
+      alert("As the owner, you cannot leave the organization. You must disband it instead.");
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to leave ${orgData.name}?`)) {
+      try {
+        // Remove user from org members
+        await updateDoc(doc(db, 'organizations', orgData.id), {
+          members: arrayRemove(user.id)
+        });
+
+        // Update user profile
+        await updateDoc(doc(db, 'users', user.id), {
+          orgId: null,
+          orgRole: null
+        });
+
+        if (onUpdateOrgInfo) {
+          onUpdateOrgInfo(undefined, undefined);
+        }
+
+        alert(`Successfully left ${orgData.name}.`);
+      } catch (err) {
+        console.error("Failed to leave organization:", err);
+        alert("Failed to leave organization.");
+      }
+    }
+  };
+
+  const handleDisbandOrg = async () => {
+    if (!orgData) return;
+    if (orgData.ownerId !== user.id) return;
+
+    if (window.confirm(`WARNING: Are you sure you want to disband ${orgData.name}? This will remove all members and delete the profile permanently.`)) {
+      try {
+        await deleteDoc(doc(db, 'organizations', orgData.id));
+
+        await updateDoc(doc(db, 'users', user.id), {
+          orgId: null,
+          orgRole: null
+        });
+
+        if (onUpdateOrgInfo) {
+          onUpdateOrgInfo(undefined, undefined);
+        }
+
+        alert(`Disbanded ${orgData.name} successfully.`);
+      } catch (err) {
+        console.error("Failed to disband organization:", err);
+        alert("Failed to disband organization.");
+      }
+    }
+  };
 
   React.useEffect(() => {
     const fetchApiStatus = async () => {
@@ -286,6 +474,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         {[
           { id: 'saved', label: 'Saved Signals', icon: Heart },
           { id: 'submissions', label: 'My Submissions', icon: Zap },
+          { id: 'org', label: 'Organization Hub', icon: Building2 },
           { id: 'preferences', label: 'Hub Preferences', icon: Tag },
           { id: 'settings', label: 'Account Settings', icon: Settings },
           { id: 'privacy', label: 'Privacy Dashboard', icon: Lock },
@@ -378,6 +567,262 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   <Zap className="w-16 h-16 text-gray-100 mx-auto mb-8" />
                   <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">You haven't broadcasted any signals yet</p>
                   <button onClick={onPostEvent} className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Broadcast Your First Event</button>
+                </div>
+              )}
+            </motion.div>
+          </ErrorBoundary>
+        )}
+
+        {activeTab === 'org' && (
+          <ErrorBoundary>
+            <motion.div
+              key="org"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-12"
+            >
+              {isLoadingOrg ? (
+                <div className="py-32 text-center bg-white rounded-[3rem] border border-gray-100 shadow-sm flex items-center justify-center">
+                  <div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+              ) : orgData ? (
+                // User has an organization
+                <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
+                  <div className="flex flex-col lg:flex-row items-start gap-12 pb-12 border-b border-gray-100 mb-12">
+                    <div className="w-32 h-32 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-[2.5rem] flex items-center justify-center text-white text-4xl font-black uppercase shadow-2xl shadow-orange-500/10 shrink-0 overflow-hidden">
+                      {orgData.logoUrl ? (
+                        <img src={orgData.logoUrl} alt={orgData.name} className="w-full h-full object-cover rounded-[2.5rem]" />
+                      ) : (
+                        orgData.name.substring(0, 2)
+                      )}
+                    </div>
+                    
+                    <div className="flex-1 space-y-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <h3 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic leading-none">{orgData.name}</h3>
+                        <span className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest ${user.orgRole === 'owner' ? 'bg-orange-600 text-white shadow-xl shadow-orange-600/10' : 'bg-gray-100 text-gray-500'}`}>
+                          {user.orgRole === 'owner' ? 'Organization Owner' : 'Member'}
+                        </span>
+                      </div>
+                      
+                      <p className="text-gray-500 font-medium text-lg leading-relaxed">{orgData.description}</p>
+                      
+                      <div className="flex flex-wrap gap-6 text-[10px] font-black uppercase tracking-widest text-gray-400 pt-2">
+                        {orgData.website && (
+                          <a href={orgData.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-orange-600 hover:underline">
+                            <Globe className="w-4 h-4" /> {orgData.website.replace(/^https?:\/\//, '')}
+                          </a>
+                        )}
+                        {orgData.email && (
+                          <div className="flex items-center gap-2">
+                            <Mail className="w-4 h-4" /> {orgData.email}
+                          </div>
+                        )}
+                        {orgData.phone && (
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4" /> {orgData.phone}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4" /> {orgData.members.length} {orgData.members.length === 1 ? 'Member' : 'Members'}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col sm:flex-row lg:flex-col gap-4 w-full lg:w-auto shrink-0">
+                      {user.orgRole === 'owner' ? (
+                        <button 
+                          onClick={handleDisbandOrg}
+                          className="px-8 py-5 bg-red-50 text-red-600 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm w-full text-center cursor-pointer"
+                        >
+                          Disband Organization
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={handleLeaveOrg}
+                          className="px-8 py-5 bg-red-50 text-red-600 font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all shadow-sm w-full text-center cursor-pointer"
+                        >
+                          Leave Organization
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Organization Events */}
+                  <div>
+                    <h4 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-8 flex items-center gap-3">
+                      <Zap className="w-5 h-5 text-orange-600" />
+                      Organization Broadcast Signals ({orgEvents.length})
+                    </h4>
+                    
+                    {orgEvents.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+                        {orgEvents.map((event) => (
+                          <div key={event.id} className="relative group">
+                            <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
+                            {user.orgRole === 'owner' && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
+                                className="absolute top-4 right-4 p-3 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-20"
+                                title="Delete Broadcast"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-20 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                        <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-400 font-black uppercase tracking-[0.2em] text-[10px] mb-6">No signals broadcasted under this organization</p>
+                        <button onClick={onPostEvent} className="px-8 py-4 bg-black text-white font-black rounded-xl text-[9px] uppercase tracking-widest shadow-lg">Broadcast Org Event</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                // User has no organization - Show Join / Create options
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  {/* Create Organization Form */}
+                  <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center">
+                        <Building2 className="w-6 h-6 text-orange-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Establish Organization</h3>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Launch a profile to publish official metropolitan schedules</p>
+                      </div>
+                    </div>
+                    
+                    <form onSubmit={handleCreateOrg} className="space-y-6">
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Organization Name</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="e.g. Tulsa Symphony Orchestra" 
+                          value={orgName}
+                          onChange={(e) => setOrgName(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Branding Email Address</label>
+                        <input 
+                          required
+                          type="email" 
+                          placeholder="info@yourorganization.org" 
+                          value={orgEmail}
+                          onChange={(e) => setOrgEmail(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Website URL</label>
+                          <input 
+                            type="url" 
+                            placeholder="https://yourorganization.org" 
+                            value={orgWebsite}
+                            onChange={(e) => setOrgWebsite(e.target.value)}
+                            className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Logo URL (Optional)</label>
+                          <input 
+                            type="url" 
+                            placeholder="https://.../logo.png" 
+                            value={orgLogoUrl}
+                            onChange={(e) => setOrgLogoUrl(e.target.value)}
+                            className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Mission & Description</label>
+                        <textarea 
+                          required
+                          placeholder="Briefly describe your organization's mission and event focus..." 
+                          value={orgDesc}
+                          onChange={(e) => setOrgDesc(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 h-28 resize-none text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        />
+                      </div>
+                      
+                      <button 
+                        type="submit" 
+                        disabled={isSubmittingOrg}
+                        className="w-full py-5 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isSubmittingOrg ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <Building2 className="w-4 h-4" />
+                            Create Profile
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Join Organization search */}
+                  <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100 flex flex-col">
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center">
+                        <Users className="w-6 h-6 text-orange-600" />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Join Organization</h3>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Connect to an established profile to post under their brand</p>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-6 relative">
+                      <input 
+                        type="text" 
+                        placeholder="Search active organizations..." 
+                        value={searchQueryOrgs}
+                        onChange={(e) => setSearchQueryOrgs(e.target.value)}
+                        className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                      />
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto max-h-[380px] pr-2 space-y-4 scrollbar-hide">
+                      {isLoadingAllOrgs ? (
+                        <div className="py-10 text-center">
+                          <div className="w-8 h-8 border-2 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                        </div>
+                      ) : allOrgs.filter(org => org.name.toLowerCase().includes(searchQueryOrgs.toLowerCase())).length > 0 ? (
+                        allOrgs.filter(org => org.name.toLowerCase().includes(searchQueryOrgs.toLowerCase())).map(org => (
+                          <div key={org.id} className="p-6 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between gap-4">
+                            <div className="overflow-hidden">
+                              <h4 className="font-black text-gray-900 uppercase tracking-tight text-sm truncate">{org.name}</h4>
+                              <p className="text-[10px] text-gray-400 font-medium truncate mt-1">{org.description}</p>
+                              <div className="flex items-center gap-4 text-[9px] font-black uppercase text-gray-400 mt-2">
+                                <span>{org.members.length} {org.members.length === 1 ? 'Member' : 'Members'}</span>
+                              </div>
+                            </div>
+                            
+                            <button 
+                              onClick={() => handleJoinOrg(org)}
+                              className="px-6 py-3 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[9px] uppercase tracking-widest transition-all shrink-0 cursor-pointer"
+                            >
+                              Join Org
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="py-10 text-center text-gray-400 font-bold uppercase tracking-widest text-[9px]">
+                          No organizations found matching "{searchQueryOrgs}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </motion.div>

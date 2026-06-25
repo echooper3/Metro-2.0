@@ -24,10 +24,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == "donva.adkism@gmail.com" ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
+      return isSignedIn();
     }
 
     function incoming() {
@@ -53,7 +50,10 @@ service cloud.firestore {
              (!('avatar' in data) || data.avatar is string) &&
              (!('phone' in data) || data.phone is string) &&
              (!('birthday' in data) || data.birthday is string) &&
-             (!('zipCode' in data) || data.zipCode is string);
+             (!('zipCode' in data) || data.zipCode is string) &&
+             (!('orgId' in data) || data.orgId is string) &&
+             (!('orgRole' in data) || data.orgRole is string) &&
+             (!('isOrganizer' in data) || data.isOrganizer is bool);
     }
 
     function isValidEvent(data) {
@@ -65,7 +65,23 @@ service cloud.firestore {
              data.userId is string &&
              data.userCreated is bool &&
              (!('imageUrl' in data) || data.imageUrl is string) &&
-             (!('price' in data) || data.price is string);
+             (!('price' in data) || data.price is string) &&
+             (!('organizerName' in data) || data.organizerName is string) &&
+             (!('organizerUrl' in data) || data.organizerUrl is string) &&
+             (!('organizerContact' in data) || data.organizerContact is string) &&
+             (!('orgId' in data) || data.orgId is string);
+    }
+
+    function isValidOrganization(data) {
+      return data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.description is string && data.description.size() <= 1000 &&
+             (!('website' in data) || data.website is string) &&
+             (!('email' in data) || data.email is string) &&
+             (!('phone' in data) || data.phone is string) &&
+             (!('logoUrl' in data) || data.logoUrl is string) &&
+             data.ownerId is string && data.ownerId == request.auth.uid &&
+             data.members is list && data.members.size() <= 100;
     }
 
     function isValidAd(data) {
@@ -76,8 +92,8 @@ service cloud.firestore {
              data.image is string && data.image.size() <= 1000 &&
              data.url is string && data.url.size() <= 1000 &&
              data.cityId is string &&
-             data.clicks is int && data.clicks >= 0 &&
-             data.impressions is int && data.impressions >= 0;
+             data.clicks is number && data.clicks >= 0 &&
+             data.impressions is number && data.impressions >= 0;
     }
 
 
@@ -95,7 +111,7 @@ service cloud.firestore {
 
       allow update: if (isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) &&
                     // Action-Based Update: Profile synchronization
-                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats'])) &&
+                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer'])) &&
                     !('role' in incoming())) 
                     || isAdmin();
     }
@@ -117,11 +133,23 @@ service cloud.firestore {
                     incoming().userId == existing().userId &&
                     // Action: Content Edit
                     incoming().diff(existing()).affectedKeys().hasAll(['updatedAt']) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'date', 'time', 'venue', 'location', 'imageUrl', 'price', 'ageRestriction', 'updatedAt']) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'date', 'time', 'venue', 'location', 'imageUrl', 'price', 'ageRestriction', 'updatedAt', 'organizerName', 'organizerUrl', 'organizerContact', 'orgId']) &&
                     incoming().updatedAt == request.time)
                     || isAdmin();
 
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
+    }
+
+    match /organizations/{orgId} {
+      allow read: if true;
+      allow create: if isVerifiedUser() && isValidId(orgId) &&
+                    isValidOrganization(incoming()) &&
+                    incoming().ownerId == request.auth.uid &&
+                    incoming().id == orgId;
+      allow update: if isSignedIn() && isValidOrganization(incoming()) &&
+                    (existing().ownerId == request.auth.uid || 
+                     incoming().diff(existing()).affectedKeys().hasOnly(['members']));
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
     }
 
     match /stats/{statId} {

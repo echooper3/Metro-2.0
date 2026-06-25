@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef, useTransition } from 'react';
 import { CATEGORIES, CITIES } from '../constants';
-import { EventActivity, Category } from '../types';
+import { EventActivity, Category, Organization } from '../types';
 import { searchPlaces } from '../services/geminiService';
 import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
 interface CreateEventModalProps {
   onClose: () => void;
   onSave: (event: EventActivity) => void;
   userId?: string;
   defaultCity?: string;
+  eventToEdit?: EventActivity;
+  userOrg?: Organization;
 }
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -37,19 +39,38 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
   });
 };
 
-const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity }) => {
+const formatDateToInput = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    const [m, d, y] = parts;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return dateStr;
+};
+
+const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity, eventToEdit, userOrg }) => {
+  const [postAsOrg, setPostAsOrg] = useState(eventToEdit?.orgId ? true : false);
   const [formData, setFormData] = useState<Partial<EventActivity>>({
-    title: '', category: 'Community', description: '', location: '', venue: '',
-    date: new Date().toISOString().split('T')[0], time: '19:00', endTime: '21:00', cityName: defaultCity || 'Tulsa',
-    price: '', ageRestriction: ''
+    title: eventToEdit?.title || '',
+    category: eventToEdit?.category || 'Community',
+    description: eventToEdit?.description || '',
+    location: eventToEdit?.location || '',
+    venue: eventToEdit?.venue || '',
+    date: eventToEdit?.date ? formatDateToInput(eventToEdit.date) : new Date().toISOString().split('T')[0],
+    time: eventToEdit?.time || '19:00',
+    endTime: eventToEdit?.endTime || '21:00',
+    cityName: eventToEdit?.cityName || defaultCity || 'Tulsa',
+    price: eventToEdit?.price || '',
+    ageRestriction: eventToEdit?.ageRestriction || ''
   });
 
-  const [addressInput, setAddressInput] = useState('');
+  const [addressInput, setAddressInput] = useState(eventToEdit?.location || '');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(eventToEdit?.imageUrl || null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   
@@ -138,25 +159,49 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     if (!formData.title || !addressInput || isCompressing) return;
     setIsSubmitting(true);
     
-    const [y, m, d] = (formData.date || '').split('-');
+    let finalDate = '';
+    if (formData.date) {
+      if (formData.date.includes('-')) {
+        const [y, m, d] = formData.date.split('-');
+        finalDate = `${m}/${d}/${y}`;
+      } else {
+        finalDate = formData.date;
+      }
+    }
+
     const finalEvent: any = {
         ...formData,
-        userId,
-        date: formData.date ? `${m}/${d}/${y}` : '',
+        userId: eventToEdit?.userId || userId,
+        date: finalDate,
         location: formData.location || addressInput,
         venue: formData.venue || addressInput,
         userCreated: true,
-        isTrending: false,
+        isTrending: eventToEdit?.isTrending || false,
         imageUrl: imagePreview || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800`,
-        createdAt: serverTimestamp()
+        createdAt: eventToEdit?.createdAt || serverTimestamp(),
+        orgId: postAsOrg && userOrg ? userOrg.id : (eventToEdit?.orgId || null),
+        organizerName: postAsOrg && userOrg ? userOrg.name : (eventToEdit?.organizerName || null),
+        organizerUrl: postAsOrg && userOrg ? userOrg.website || null : (eventToEdit?.organizerUrl || null),
+        organizerContact: postAsOrg && userOrg ? userOrg.email || null : (eventToEdit?.organizerContact || null)
     };
 
     try {
-      const docRef = await addDoc(collection(db, 'events'), finalEvent);
-      onSave({ ...finalEvent, id: docRef.id });
+      if (eventToEdit && eventToEdit.id) {
+        const eventRef = doc(db, 'events', eventToEdit.id);
+        const updateData = {
+          ...finalEvent,
+          updatedAt: serverTimestamp()
+        };
+        delete updateData.createdAt;
+        await updateDoc(eventRef, updateData);
+        onSave({ ...eventToEdit, ...updateData });
+      } else {
+        const docRef = await addDoc(collection(db, 'events'), finalEvent);
+        onSave({ ...finalEvent, id: docRef.id });
+      }
       onClose();
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'events');
+      handleFirestoreError(error, eventToEdit ? OperationType.UPDATE : OperationType.CREATE, 'events');
     } finally {
       setIsSubmitting(false);
     }
@@ -197,7 +242,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
             <Sparkles className="w-3 h-3 text-orange-600" />
             <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Community Portal</span>
           </div>
-          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">Post an Event</h2>
+          <h2 className="text-4xl md:text-5xl font-black text-gray-900 tracking-tighter uppercase italic">{eventToEdit ? 'Edit Event' : 'Post an Event'}</h2>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-8">
@@ -232,6 +277,29 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
               <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
             </div>
           </div>
+
+          {userOrg && (
+            <div className="p-8 bg-orange-50 rounded-[2rem] border border-orange-100 flex items-center justify-between gap-6 mb-4">
+              <div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Official Broadcasting</span>
+                <h4 className="text-xs font-black text-gray-900 uppercase">Post under {userOrg.name}</h4>
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">This event will carry your organization's branding and links.</p>
+              </div>
+              
+              <button
+                type="button"
+                onClick={() => setPostAsOrg(!postAsOrg)}
+                className={`w-14 h-8 rounded-full transition-all relative flex items-center px-1 shrink-0 ${postAsOrg ? 'bg-orange-600' : 'bg-gray-200'} cursor-pointer`}
+              >
+                <motion.div 
+                  layout
+                  className="w-6 h-6 bg-white rounded-full shadow-md"
+                  style={{ x: postAsOrg ? 24 : 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                />
+              </button>
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className={labelClasses}>Event Title</label>
@@ -390,7 +458,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                Broadcast Event
+                {eventToEdit ? 'Update Event' : 'Broadcast Event'}
                 <Zap className="w-4 h-4 ml-3" />
               </>
             )}

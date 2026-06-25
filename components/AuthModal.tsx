@@ -14,6 +14,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
+  const [isOrganizer, setIsOrganizer] = useState(false);
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -79,6 +80,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             birthday: formData.birthday,
             zipCode: formData.zip_code,
             metroId: formData.user_id,
+            isOrganizer: isOrganizer,
             savedEvents: [],
             preferences: { favoriteCategories: [] },
             createdAt: new Date().toISOString()
@@ -240,6 +242,26 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 <label className={labelClasses}>Birthday</label>
                 <input required type="date" className={inputClasses} value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})} />
                 <Calendar className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
+              </div>
+
+              <div className="flex items-center justify-between p-6 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-black transition-all gap-4">
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Account Role</span>
+                  <h4 className="text-xs font-black text-gray-900 uppercase">Register as Event Organizer</h4>
+                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">Gives access to establish and manage official organization hubs.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOrganizer(!isOrganizer)}
+                  className={`w-12 h-7 rounded-full transition-all relative flex items-center px-1 shrink-0 ${isOrganizer ? 'bg-orange-600' : 'bg-gray-200'} cursor-pointer`}
+                >
+                  <motion.div 
+                    layout
+                    className="w-5 h-5 bg-white rounded-full shadow-md"
+                    style={{ x: isOrganizer ? 20 : 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                </button>
               </div>
             </>
           )}

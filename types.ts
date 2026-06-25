@@ -42,6 +42,22 @@ export interface EventActivity {
   organizerContact?: string;
   isLive?: boolean; // True if sourced from Google Search
   isVerified?: boolean;
+  createdAt?: any;
+  updatedAt?: any;
+  orgId?: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  description: string;
+  website?: string;
+  email?: string;
+  phone?: string;
+  logoUrl?: string;
+  ownerId: string;
+  members: string[];
+  createdAt?: any;
 }
 
 export interface GroundingSource {
@@ -70,6 +86,9 @@ export interface UserProfile {
     lastSyncAt?: string;
     totalSyncs?: number;
   };
+  orgId?: string;
+  orgRole?: 'owner' | 'member';
+  isOrganizer?: boolean;
   preferences: {
     favoriteCity?: string;
     favoriteCategories: Category[];
