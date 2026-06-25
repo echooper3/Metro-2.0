@@ -46,7 +46,7 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [loadingMsgIdx, setLoadingMsgIdx] = useState(0);
-  const [sourceStatus, setSourceStatus] = useState<'live' | 'grounded' | 'ai' | 'seed' | 'cache' | 'quota-limited' | 'ticketmaster'>('seed');
+  const [sourceStatus, setSourceStatus] = useState<'live' | 'grounded' | 'ai' | 'seed' | 'cache' | 'quota-limited' | 'ticketmaster' | 'eventbrite'>('seed');
   const [toasts, setToasts] = useState<Array<{ id: number, message: string }>>([]);
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -259,6 +259,40 @@ const App: React.FC = () => {
     } catch (err) {
       console.warn("Ticketmaster sync failed:", err);
       addToast("Ticketmaster sync failed. Please check your API key configuration.");
+      setSourceStatus('seed');
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [addToast]);
+
+  const loadEventbriteEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
+    const requestId = ++fetchIdRef.current;
+    setIsRefreshing(true);
+    setSourceStatus('eventbrite');
+
+    try {
+      const params = new URLSearchParams();
+      if (cityName !== 'All') params.append('city', cityName);
+      if (options.keyword) params.append('keyword', options.keyword);
+      if (options.category && options.category !== 'All') params.append('category', options.category);
+
+      const response = await fetch(`/api/eventbrite?${params.toString()}`);
+      if (!response.ok) throw new Error('Eventbrite sync failed');
+      
+      const data = await response.json();
+      if (requestId !== fetchIdRef.current) return;
+
+      if (data.events && data.events.length > 0) {
+        setAllEvents(data.events);
+        setSourceStatus('eventbrite');
+        addToast(`Synchronized ${data.events.length} Eventbrite signals`);
+      } else {
+        addToast("No Eventbrite signals found for this region.");
+        setSourceStatus('seed');
+      }
+    } catch (err) {
+      console.warn("Eventbrite sync failed:", err);
+      addToast("Eventbrite sync failed. Please check your API key & Org configuration.");
       setSourceStatus('seed');
     } finally {
       setIsRefreshing(false);
@@ -715,9 +749,9 @@ const App: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
-                          <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' ? 'text-emerald-600' : 'text-orange-600'}`}>
-                            {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'ticketmaster' ? 'Ticketmaster Live Feed' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
+                          <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' || sourceStatus === 'eventbrite' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
+                          <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' || sourceStatus === 'eventbrite' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                            {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'ticketmaster' ? 'Ticketmaster Live Feed' : sourceStatus === 'eventbrite' ? 'Eventbrite Live Feed' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
                           </span>
                         </>
                       )}
@@ -729,17 +763,30 @@ const App: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                  {sourceStatus !== 'ticketmaster' && (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => loadTicketmasterEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined })}
-                      className="flex items-center gap-3 px-6 py-4 bg-blue-600 text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20"
-                    >
-                      <Zap className="w-4 h-4" />
-                      Sync Ticketmaster
-                    </motion.button>
-                  )}
+                  <div className="flex flex-wrap gap-4">
+                    {sourceStatus !== 'ticketmaster' && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => loadTicketmasterEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined })}
+                        className="flex items-center gap-3 px-6 py-4 bg-blue-600 text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Sync Ticketmaster
+                      </motion.button>
+                    )}
+                    {sourceStatus !== 'eventbrite' && (
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => loadEventbriteEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined })}
+                        className="flex items-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-orange-600/20"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Sync Eventbrite
+                      </motion.button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

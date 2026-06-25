@@ -68,7 +68,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
-  const [apiStatus, setApiStatus] = useState<{ ticketmaster: boolean, gemini: boolean }>({ ticketmaster: false, gemini: false });
+  const [apiStatus, setApiStatus] = useState<{ ticketmaster: boolean, gemini: boolean, eventbrite?: boolean }>({ ticketmaster: false, gemini: false, eventbrite: false });
 
   React.useEffect(() => {
     const fetchApiStatus = async () => {
@@ -537,7 +537,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-8 mb-16">
                   <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
                     <div className="flex items-center gap-3 mb-6">
                       <Database className="w-4 h-4 text-gray-400" />
@@ -577,6 +577,18 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
                       <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.gemini ? 'text-emerald-600' : 'text-red-600'}`}>
                         {apiStatus.gemini ? 'Operational' : 'Offline (Missing Key)'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                    <div className="flex items-center gap-3 mb-6">
+                      <Zap className="w-4 h-4 text-gray-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Eventbrite API</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${apiStatus.eventbrite ? 'bg-emerald-500' : 'bg-red-500'} animate-pulse`} />
+                      <span className={`text-lg font-black uppercase tracking-tight italic ${apiStatus.eventbrite ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {apiStatus.eventbrite ? 'Operational' : 'Offline (Missing Key/Org)'}
                       </span>
                     </div>
                   </div>

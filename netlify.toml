@@ -9,6 +9,11 @@
   status = 200
  
 [[redirects]]
+  from = "/api/eventbrite"
+  to = "/.netlify/functions/eventbrite"
+  status = 200
+ 
+[[redirects]]
   from = "/api/read-sheet"
   to = "/.netlify/functions/read-sheet"
   status = 200
