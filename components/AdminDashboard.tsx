@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { 
   TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, 
   BarChart3, Search, Heart, LayoutGrid, X, Trash2, Megaphone, PlusCircle, 
-  Eye, MousePointerClick, Percent, RefreshCw, CheckCircle2, AlertCircle 
+  Eye, MousePointerClick, Percent, RefreshCw, CheckCircle2, AlertCircle, Upload 
 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
@@ -29,6 +29,28 @@ interface Ad {
   impressions: number;
   createdAt?: any;
 }
+
+const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
+      } else {
+        if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+  });
+};
 
 interface AdminDashboardProps {
   user: UserProfile;
@@ -64,6 +86,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [newAdImage, setNewAdImage] = useState('');
   const [newAdUrl, setNewAdUrl] = useState('');
   const [newAdCityId, setNewAdCityId] = useState('general');
+  const [isCompressing, setIsCompressing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsCompressing(true);
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setNewAdImage(compressed);
+        setIsCompressing(false);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   useEffect(() => {
     // Fetch traffic stats
@@ -142,6 +180,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
       setNewAdImage('');
       setNewAdUrl('');
       setNewAdCityId('general');
+      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (err) {
       console.error("Failed to publish sponsorship signal:", err);
       alert("Failed to publish sponsorship signal. Please verify permissions.");
@@ -970,15 +1009,55 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
                     </div>
 
                     <div>
-                      <label className="block text-[8px] font-black uppercase tracking-widest text-gray-400 mb-2">Cover Image URL *</label>
-                      <input
-                        type="url"
-                        required
-                        placeholder="https://..."
-                        value={newAdImage}
-                        onChange={(e) => setNewAdImage(e.target.value)}
-                        className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-700 placeholder-gray-300 focus:outline-none focus:border-black transition-colors"
-                      />
+                      <label className="block text-[8px] font-black uppercase tracking-widest text-gray-400 mb-2">Cover Image *</label>
+                      <div 
+                        type="button"
+                        onClick={() => !newAdImage && !isCompressing && fileInputRef.current?.click()}
+                        className={`relative h-40 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${newAdImage ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
+                      >
+                        {isCompressing ? (
+                          <div className="text-center">
+                            <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                            <p className="text-[8px] font-black text-orange-600 uppercase tracking-widest">Optimizing Ad Image...</p>
+                          </div>
+                        ) : newAdImage ? (
+                          <>
+                            <img src={newAdImage} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/20 hover:bg-black/40 transition-all flex items-center justify-center group" />
+                            <button 
+                              type="button" 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setNewAdImage(''); 
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }} 
+                              className="absolute top-2 right-2 p-2 bg-white/20 backdrop-blur-md text-white rounded-xl hover:bg-red-600 transition-all z-10"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="text-center p-4">
+                            <div className="w-10 h-10 bg-gray-100 text-black rounded-xl flex items-center justify-center mx-auto mb-2">
+                              <Upload className="w-5 h-5" />
+                            </div>
+                            <p className="text-[9px] font-black text-gray-900 uppercase tracking-widest">Click to Upload Cover Image</p>
+                            <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest mt-1">Or paste a URL below</p>
+                          </div>
+                        )}
+                        <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                      </div>
+
+                      {/* Paste URL input as alternative/fallback */}
+                      {!newAdImage && (
+                        <input
+                          type="url"
+                          placeholder="Or paste an image URL: https://..."
+                          value={newAdImage}
+                          onChange={(e) => setNewAdImage(e.target.value)}
+                          className="w-full px-5 py-4 mt-3 bg-white border border-gray-200 rounded-2xl text-[10px] font-black uppercase tracking-widest text-gray-700 placeholder-gray-300 focus:outline-none focus:border-black transition-colors"
+                        />
+                      )}
                     </div>
 
                     <button

@@ -53,6 +53,11 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [pendingOnboardingData, setPendingOnboardingData] = useState<{ favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean } | null>(null);
+  const pendingOnboardingDataRef = useRef(pendingOnboardingData);
+  useEffect(() => {
+    pendingOnboardingDataRef.current = pendingOnboardingData;
+  }, [pendingOnboardingData]);
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   const [userOrg, setUserOrg] = useState<Organization | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
@@ -143,15 +148,14 @@ const App: React.FC = () => {
       if (user) {
         if (!user.preferences?.hasCompletedOnboarding) {
           setShowOnboarding(true);
+        } else {
+          setShowOnboarding(false);
         }
       } else {
-        const guestOnboarding = localStorage.getItem('metro_onboarding_complete');
-        if (!guestOnboarding) {
-          setShowOnboarding(true);
-        }
+        setShowOnboarding(true);
       }
     }
-  }, [isAuthReady, user?.preferences?.hasCompletedOnboarding]);
+  }, [isAuthReady, user]);
 
   const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => {
     if (user) {
@@ -169,17 +173,14 @@ const App: React.FC = () => {
         }
         await updateDoc(userRef, updates);
         setUser(prev => prev ? { ...prev, ...updates } : null);
+        setShowOnboarding(false);
         addToast("Metropolitan profile synchronized.");
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
       }
     } else {
-      localStorage.setItem('metro_onboarding_complete', 'true');
-      localStorage.setItem('metro_pref_city', data.favoriteCity);
-      localStorage.setItem('metro_pref_cats', JSON.stringify(data.favoriteCategories));
-      if (data.isOrganizer !== undefined) {
-        localStorage.setItem('metro_pref_org', String(data.isOrganizer));
-      }
+      setPendingOnboardingData(data);
+      setShowAuthModal(true);
     }
     
     // Auto-select city if one was chosen
@@ -189,9 +190,6 @@ const App: React.FC = () => {
         handleCitySelect(city);
       }
     }
-    
-    setShowOnboarding(false);
-    addToast("Welcome to the Metropolitan Intelligence Network.");
   };
 
   const handleOpenDetails = useCallback((event: EventActivity) => {
@@ -289,74 +287,6 @@ const App: React.FC = () => {
   }, [allEvents, dbEvents, activeCategory, selectedCity, searchQuery]);
 
 
-  const loadTicketmasterEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
-    const requestId = ++fetchIdRef.current;
-    setIsRefreshing(true);
-    setSourceStatus('ticketmaster');
-
-    try {
-      const params = new URLSearchParams();
-      if (cityName !== 'All') params.append('city', cityName);
-      if (options.keyword) params.append('keyword', options.keyword);
-      if (options.category && options.category !== 'All') params.append('classificationName', options.category);
-
-      const response = await fetch(`/api/ticketmaster?${params.toString()}`);
-      if (!response.ok) throw new Error('Ticketmaster sync failed');
-      
-      const data = await response.json();
-      if (requestId !== fetchIdRef.current) return;
-
-      if (data.events && data.events.length > 0) {
-        setAllEvents(data.events);
-        setSourceStatus('ticketmaster');
-        addToast(`Synchronized ${data.events.length} Ticketmaster signals`);
-      } else {
-        addToast("No Ticketmaster signals found for this region.");
-        setSourceStatus('seed');
-      }
-    } catch (err) {
-      console.warn("Ticketmaster sync failed:", err);
-      addToast("Ticketmaster sync failed. Please check your API key configuration.");
-      setSourceStatus('seed');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [addToast]);
-
-  const loadEventbriteEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
-    const requestId = ++fetchIdRef.current;
-    setIsRefreshing(true);
-    setSourceStatus('eventbrite');
-
-    try {
-      const params = new URLSearchParams();
-      if (cityName !== 'All') params.append('city', cityName);
-      if (options.keyword) params.append('keyword', options.keyword);
-      if (options.category && options.category !== 'All') params.append('category', options.category);
-
-      const response = await fetch(`/api/eventbrite?${params.toString()}`);
-      if (!response.ok) throw new Error('Eventbrite sync failed');
-      
-      const data = await response.json();
-      if (requestId !== fetchIdRef.current) return;
-
-      if (data.events && data.events.length > 0) {
-        setAllEvents(data.events);
-        setSourceStatus('eventbrite');
-        addToast(`Synchronized ${data.events.length} Eventbrite signals`);
-      } else {
-        addToast("No Eventbrite signals found for this region.");
-        setSourceStatus('seed');
-      }
-    } catch (err) {
-      console.warn("Eventbrite sync failed:", err);
-      addToast("Eventbrite sync failed. Please check your API key & Org configuration.");
-      setSourceStatus('seed');
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [addToast]);
-
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
     const requestId = ++fetchIdRef.current;
     const isNextPage = (options.page || 1) > 1;
@@ -395,6 +325,17 @@ const App: React.FC = () => {
             setSources(result.sources || []);
             setSourceStatus(result.status as any);
             if (result.events.length < 12) setHasMore(false);
+
+            // Toast for automatic sync info
+            if (!options.page || options.page === 1) {
+              const parts = [];
+              if (result.geminiCount > 0) parts.push(`${result.geminiCount} Metropolitan`);
+              if (result.ticketmasterCount > 0) parts.push(`${result.ticketmasterCount} Ticketmaster`);
+              if (result.eventbriteCount > 0) parts.push(`${result.eventbriteCount} Eventbrite`);
+              if (parts.length > 0) {
+                addToast(`Synchronized ${parts.join(', ')} signals`);
+              }
+            }
           }
         });
       } else if (!isNextPage) {
@@ -458,8 +399,9 @@ const App: React.FC = () => {
         // Initial check and setup
         try {
           const userDoc = await getDoc(userDocRef);
+          let userData: UserProfile;
           if (!userDoc.exists()) {
-            const newUser: UserProfile = {
+            userData = {
               id: firebaseUser.uid,
               name: firebaseUser.displayName || 'Metropolitan Member',
               email: firebaseUser.email || '',
@@ -470,8 +412,44 @@ const App: React.FC = () => {
               savedEvents: [],
               preferences: { favoriteCategories: [], hasCompletedOnboarding: false }
             };
-            await setDoc(userDocRef, newUser);
-            setUser(newUser);
+
+            if (pendingOnboardingDataRef.current) {
+              const pending = pendingOnboardingDataRef.current;
+              userData.preferences.favoriteCity = pending.favoriteCity;
+              userData.preferences.favoriteCategories = pending.favoriteCategories;
+              userData.preferences.hasCompletedOnboarding = true;
+              if (pending.isOrganizer !== undefined) {
+                userData.isOrganizer = pending.isOrganizer;
+              }
+              pendingOnboardingDataRef.current = null;
+              setPendingOnboardingData(null);
+              setShowOnboarding(false);
+            }
+
+            await setDoc(userDocRef, userData);
+            setUser(userData);
+          } else {
+            userData = userDoc.data() as UserProfile;
+            
+            if (pendingOnboardingDataRef.current) {
+              const pending = pendingOnboardingDataRef.current;
+              
+              userData.preferences = {
+                ...userData.preferences,
+                favoriteCity: pending.favoriteCity,
+                favoriteCategories: pending.favoriteCategories,
+                hasCompletedOnboarding: true
+              };
+              if (pending.isOrganizer !== undefined) {
+                userData.isOrganizer = pending.isOrganizer;
+              }
+              pendingOnboardingDataRef.current = null;
+              setPendingOnboardingData(null);
+              setShowOnboarding(false);
+              
+              await setDoc(userDocRef, userData);
+            }
+            setUser(userData);
           }
         } catch (error) {
           handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
@@ -829,9 +807,9 @@ const App: React.FC = () => {
                         </>
                       ) : (
                         <>
-                          <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' || sourceStatus === 'eventbrite' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
-                          <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' || sourceStatus === 'ticketmaster' || sourceStatus === 'eventbrite' ? 'text-emerald-600' : 'text-orange-600'}`}>
-                            {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'ticketmaster' ? 'Ticketmaster Live Feed' : sourceStatus === 'eventbrite' ? 'Eventbrite Live Feed' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Sync Active'}
+                          <div className={`w-2 h-2 rounded-full ${sourceStatus === 'cache' ? 'bg-emerald-500' : 'bg-orange-500'} animate-pulse`} />
+                          <span className={`font-black text-[10px] uppercase tracking-[0.2em] ${sourceStatus === 'cache' ? 'text-emerald-600' : 'text-orange-600'}`}>
+                            {sourceStatus === 'cache' ? 'Verified Stream (Cached)' : sourceStatus === 'seed' ? 'Static Base Ready' : 'Metropolitan Multi-Sync Active'}
                           </span>
                         </>
                       )}
@@ -842,30 +820,6 @@ const App: React.FC = () => {
                         Cloud Sync: {isFirebaseConnected ? 'ONLINE' : isFirebaseConnected === false ? 'OFFLINE' : 'CONNECTING...'}
                       </span>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-4">
-                    {sourceStatus !== 'ticketmaster' && (
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => loadTicketmasterEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined })}
-                        className="flex items-center gap-3 px-6 py-4 bg-blue-600 text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-600/20"
-                      >
-                        <Zap className="w-4 h-4" />
-                        Sync Ticketmaster
-                      </motion.button>
-                    )}
-                    {sourceStatus !== 'eventbrite' && (
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => loadEventbriteEvents(selectedCity?.name || 'All', { category: activeCategory, keyword: searchQuery || undefined })}
-                        className="flex items-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-orange-600/20"
-                      >
-                        <Zap className="w-4 h-4" />
-                        Sync Eventbrite
-                      </motion.button>
-                    )}
                   </div>
                 </div>
               </div>
@@ -1065,7 +1019,13 @@ const App: React.FC = () => {
             <OnboardingFlow 
               user={user}
               onComplete={handleCompleteOnboarding}
-              onClose={() => setShowOnboarding(false)}
+              onClose={() => {
+                if (user) {
+                  setShowOnboarding(false);
+                }
+              }}
+              isDismissible={!!user}
+              onSignInClick={() => setShowAuthModal(true)}
             />
           </Suspense>
         )}

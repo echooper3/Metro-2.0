@@ -8,9 +8,11 @@ interface OnboardingFlowProps {
   user: UserProfile | null;
   onComplete: (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => void;
   onClose: () => void;
+  isDismissible?: boolean;
+  onSignInClick?: () => void;
 }
 
-const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClose }) => {
+const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClose, isDismissible = true, onSignInClick }) => {
   const [step, setStep] = useState(1);
   const [selectedCity, setSelectedCity] = useState<string>(user?.preferences?.favoriteCity || '');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>(user?.preferences?.favoriteCategories || []);
@@ -61,7 +63,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-white/80 backdrop-blur-xl"
-        onClick={onClose}
+        onClick={isDismissible ? onClose : undefined}
       />
       
       <motion.div
@@ -82,12 +84,14 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
         </div>
 
         {/* Close Button */}
-        <button 
-          onClick={onClose}
-          className="absolute top-8 right-8 p-3 hover:bg-gray-100 rounded-2xl transition-colors z-10"
-        >
-          <X className="w-5 h-5 text-gray-400" />
-        </button>
+        {isDismissible && (
+          <button 
+            onClick={onClose}
+            className="absolute top-8 right-8 p-3 hover:bg-gray-100 rounded-2xl transition-colors z-10"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        )}
 
         <div className="p-8 md:p-12 overflow-y-auto">
           <AnimatePresence mode="wait" custom={step}>
@@ -112,6 +116,19 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                   <p className="text-sm font-bold text-gray-500 uppercase tracking-widest max-w-md">
                     Synchronizing live metropolitan signals from the world's most vibrant hubs.
                   </p>
+                  
+                  {onSignInClick && !user && (
+                    <div className="flex items-center justify-between p-5 bg-orange-50/50 border border-orange-100 rounded-[1.5rem] mt-4">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Already a Metropolitan member?</span>
+                      <button 
+                        type="button"
+                        onClick={onSignInClick}
+                        className="px-5 py-2.5 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 transition-all shadow-md shadow-black/10"
+                      >
+                        Sign In
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="p-6 bg-gray-50 rounded-[2rem] border border-gray-100">
@@ -313,7 +330,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
             }`}
           >
             <span className="text-xs font-black uppercase tracking-widest">
-              {step === totalSteps ? 'Enter The Metro' : 'Next Protocol'}
+              {step === totalSteps ? (user ? 'Enter The Metro' : 'Sign Up to Enter') : 'Next Protocol'}
             </span>
             <ArrowRight className="w-5 h-5" />
           </motion.button>

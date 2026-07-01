@@ -209,23 +209,116 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
 
   try {
     const useGrounding = !options.fastSync;
-    let result = await queryGemini(cityName, options, useGrounding, signal);
-    
-    // Fallback: If grounding returned nothing, try without grounding
-    if ((!result || result.events.length === 0) && useGrounding) {
-      if (signal.aborted) throw new Error('AbortError');
-      console.warn("Grounding returned no events, falling back to AI generation.");
-      result = await queryGemini(cityName, { ...options, fastSync: true }, false, signal);
+    const isPage1 = !options.page || options.page === 1;
+
+    const promises: Promise<any>[] = [];
+
+    // 1. Gemini / AI events fetch
+    const geminiPromise = (async () => {
+      try {
+        let result = await queryGemini(cityName, options, useGrounding, signal);
+        
+        // Fallback: If grounding returned nothing, try without grounding
+        if ((!result || result.events.length === 0) && useGrounding) {
+          if (signal.aborted) throw new Error('AbortError');
+          console.warn("Grounding returned no events, falling back to AI generation.");
+          result = await queryGemini(cityName, { ...options, fastSync: true }, false, signal);
+        }
+        return result || { events: [], sources: [] };
+      } catch (err) {
+        console.error("Gemini query failed:", err);
+        return { events: [], sources: [] };
+      }
+    })();
+    promises.push(geminiPromise);
+
+    // 2. Ticketmaster proxy fetch (only on page 1)
+    if (isPage1) {
+      const tmPromise = (async () => {
+        try {
+          const params = new URLSearchParams();
+          if (cityName !== 'All') params.append('city', cityName);
+          if (options.keyword) params.append('keyword', options.keyword);
+          if (options.category && options.category !== 'All') params.append('classificationName', options.category);
+          
+          const response = await fetch(`/api/ticketmaster?${params.toString()}`, { signal });
+          if (response.ok) {
+            const data = await response.json();
+            return data.events || [];
+          }
+        } catch (err) {
+          console.warn("Ticketmaster auto-sync failed:", err);
+        }
+        return [];
+      })();
+      promises.push(tmPromise);
+    } else {
+      promises.push(Promise.resolve([]));
     }
 
-    if (!result) return null;
+    // 3. Eventbrite proxy fetch (only on page 1)
+    if (isPage1) {
+      const ebPromise = (async () => {
+        try {
+          const params = new URLSearchParams();
+          if (cityName !== 'All') params.append('city', cityName);
+          if (options.keyword) params.append('keyword', options.keyword);
+          if (options.category && options.category !== 'All') params.append('category', options.category);
+          
+          const response = await fetch(`/api/eventbrite?${params.toString()}`, { signal });
+          if (response.ok) {
+            const data = await response.json();
+            return data.events || [];
+          }
+        } catch (err) {
+          console.warn("Eventbrite auto-sync failed:", err);
+        }
+        return [];
+      })();
+      promises.push(ebPromise);
+    } else {
+      promises.push(Promise.resolve([]));
+    }
+
+    const settled = await Promise.all(promises);
+    const geminiResult = settled[0];
+    const tmEvents = settled[1] || [];
+    const ebEvents = settled[2] || [];
+
+    if (signal.aborted) throw new Error('AbortError');
+
+    // Combine and de-duplicate by title (case-insensitive)
+    const combinedEvents = [...(geminiResult.events || [])];
+    const seenTitles = new Set(combinedEvents.map(e => e.title.toLowerCase()));
+
+    for (const e of tmEvents) {
+      if (!seenTitles.has(e.title.toLowerCase())) {
+        combinedEvents.push(e);
+        seenTitles.add(e.title.toLowerCase());
+      }
+    }
+
+    for (const e of ebEvents) {
+      if (!seenTitles.has(e.title.toLowerCase())) {
+        combinedEvents.push(e);
+        seenTitles.add(e.title.toLowerCase());
+      }
+    }
 
     let status: any = 'ai';
     if (options.fastSync) status = 'live';
-    else if (result.sources.length > 0) status = 'grounded';
+    else if (geminiResult.sources && geminiResult.sources.length > 0) status = 'grounded';
 
-    const finalResult = { ...result, status };
-    if (finalResult.events.length > 0 && (!options.page || options.page === 1)) {
+    const finalResult = {
+      events: combinedEvents,
+      sources: geminiResult.sources || [],
+      status,
+      geminiCount: (geminiResult.events || []).length,
+      ticketmasterCount: tmEvents.length,
+      eventbriteCount: ebEvents.length
+    };
+
+    if (finalResult.events.length > 0 && isPage1) {
       setPersistentCache(cacheKey, finalResult);
     }
     
