@@ -29,6 +29,20 @@ async function startServer() {
   });
 
   // Ticketmaster Proxy
+  const formatTo12Hour = (timeStr?: string): string | undefined => {
+    if (!timeStr) return undefined;
+    const parts = timeStr.split(':');
+    if (parts.length >= 2) {
+      let hour = parseInt(parts[0], 10);
+      const minute = parts[1];
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      hour = hour % 12;
+      hour = hour ? hour : 12;
+      return `${hour}:${minute} ${ampm}`;
+    }
+    return timeStr;
+  };
+
   app.get("/api/ticketmaster", async (req, res) => {
     const apiKey = process.env.TICKETMASTER_API_KEY;
     if (!apiKey) {
@@ -56,7 +70,7 @@ async function startServer() {
         category: e.classifications?.[0]?.segment?.name || "Entertainment",
         description: e.info || e.pleaseNote || `Live event at ${e._embedded?.venues?.[0]?.name}`,
         date: e.dates?.start?.localDate ? new Date(e.dates.start.localDate).toLocaleDateString('en-US') : undefined,
-        time: e.dates?.start?.localTime,
+        time: formatTo12Hour(e.dates?.start?.localTime),
         venue: e._embedded?.venues?.[0]?.name,
         location: e._embedded?.venues?.[0]?.address?.line1,
         cityName: e._embedded?.venues?.[0]?.city?.name,
