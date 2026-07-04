@@ -10,7 +10,7 @@ import { City, AppView, EventActivity, Category, GroundingSource, WeatherData, U
 import { fetchEvents, FetchOptions, getCacheKey, getCachedData } from './services/geminiService';
 import { fetchCityWeather } from './services/weatherService';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle, Edit2, Trash2 } from 'lucide-react';
+import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp } from 'firebase/firestore';
@@ -43,6 +43,10 @@ const App: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [detailedEvent, setDetailedEvent] = useState<EventActivity | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [detailedEvent?.id]);
   const [eventToEdit, setEventToEdit] = useState<EventActivity | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -1060,10 +1064,75 @@ const App: React.FC = () => {
               </button>
               
               <div className="grid grid-cols-1 lg:grid-cols-2">
-                <div className="h-[400px] lg:h-auto relative">
-                  <img src={detailedEvent.imageUrl || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800"} className="w-full h-full object-cover" alt={detailedEvent.title} referrerPolicy="no-referrer" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                  <div className="absolute bottom-8 left-8 right-8">
+                <div className="h-[400px] lg:h-auto min-h-[400px] relative bg-black flex items-center justify-center overflow-hidden">
+                  {detailedEvent.youtubeUrl ? (
+                    <div className="w-full h-full aspect-video">
+                      <iframe 
+                        src={detailedEvent.youtubeUrl} 
+                        className="w-full h-full border-0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowFullScreen
+                      />
+                    </div>
+                  ) : detailedEvent.videoUrl ? (
+                    <video src={detailedEvent.videoUrl} controls className="w-full h-full object-contain" />
+                  ) : detailedEvent.imageUrls && detailedEvent.imageUrls.length > 0 ? (
+                    <div className="relative w-full h-full group flex items-center justify-center">
+                      <img 
+                        src={detailedEvent.imageUrls[activeImageIndex]} 
+                        className="w-full h-full object-cover" 
+                        alt={`${detailedEvent.title} - ${activeImageIndex + 1}`} 
+                        referrerPolicy="no-referrer" 
+                      />
+                      
+                      {detailedEvent.imageUrls.length > 1 && (
+                        <>
+                          {/* Navigation Arrows */}
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveImageIndex(prev => (prev === 0 ? detailedEvent.imageUrls!.length - 1 : prev - 1));
+                            }}
+                            className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 text-white rounded-full hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                          >
+                            <ChevronLeft className="w-5 h-5" />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveImageIndex(prev => (prev === detailedEvent.imageUrls!.length - 1 ? 0 : prev + 1));
+                            }}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-black/50 text-white rounded-full hover:bg-black/80 transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                          
+                          {/* Indicators Dots */}
+                          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex gap-2 z-10">
+                            {detailedEvent.imageUrls.map((_, idx) => (
+                              <button
+                                key={idx}
+                                onClick={(e) => { e.stopPropagation(); setActiveImageIndex(idx); }}
+                                className={`w-2.5 h-2.5 rounded-full transition-all ${activeImageIndex === idx ? 'bg-orange-600 w-6' : 'bg-white/50 hover:bg-white'} cursor-pointer`}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <img 
+                      src={detailedEvent.imageUrl || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800"} 
+                      className="w-full h-full object-cover" 
+                      alt={detailedEvent.title} 
+                      referrerPolicy="no-referrer" 
+                    />
+                  )}
+                  
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                  <div className="absolute bottom-8 left-8 right-8 z-10 pointer-events-none">
                      <div className="flex flex-wrap gap-3">
                         <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.category}</span>
                         <span className="px-4 py-2 bg-white/20 backdrop-blur-md border border-white/30 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">{detailedEvent.cityName}</span>

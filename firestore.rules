@@ -75,7 +75,10 @@ service cloud.firestore {
              (!('organizerName' in data) || data.organizerName is string) &&
              (!('organizerUrl' in data) || data.organizerUrl is string) &&
              (!('organizerContact' in data) || data.organizerContact is string) &&
-             (!('orgId' in data) || data.orgId is string);
+             (!('orgId' in data) || data.orgId is string) &&
+             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
+             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 4000000)) &&
+             (!('youtubeUrl' in data) || data.youtubeUrl is string);
     }
 
     function isValidOrganization(data) {

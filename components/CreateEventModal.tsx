@@ -4,9 +4,9 @@ import { EventActivity, Category, Organization } from '../types';
 import { searchPlaces } from '../services/geminiService';
 import { fetchAddressSuggestions, LocationSuggestion, getCurrentPosition, reverseGeocode } from '../services/locationService';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target } from 'lucide-react';
+import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target, Video, Trash2, Play, Upload } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -70,6 +70,16 @@ const formatDateToInput = (dateStr?: string) => {
   return dateStr;
 };
 
+const parseYoutubeUrl = (url: string): string => {
+  if (!url) return '';
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  if (match && match[2].length === 11) {
+    return `https://www.youtube.com/embed/${match[2]}`;
+  }
+  return url;
+};
+
 const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity, eventToEdit, userOrg }) => {
   const [postAsOrg, setPostAsOrg] = useState(eventToEdit?.orgId ? true : false);
   const [formData, setFormData] = useState<Partial<EventActivity>>({
@@ -91,13 +101,20 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
   const [isSearching, setIsSearching] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(eventToEdit?.imageUrl || null);
+  
+  // Media States
+  const [imagePreviews, setImagePreviews] = useState<string[]>(eventToEdit?.imageUrls || (eventToEdit?.imageUrl ? [eventToEdit.imageUrl] : []));
+  const [videoPreview, setVideoPreview] = useState<string | null>(eventToEdit?.videoUrl || null);
+  const [youtubeInput, setYoutubeInput] = useState(eventToEdit?.youtubeUrl || '');
+  const [videoError, setVideoError] = useState<string | null>(null);
+
   const [isCompressing, setIsCompressing] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   
   const [isPending, startTransition] = useTransition();
   const searchTimeoutRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (addressInput.length < 3) {
@@ -161,18 +178,58 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     }
   };
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMultipleImagesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files) {
+      const remainingCount = 5 - imagePreviews.length;
+      if (files.length > remainingCount) {
+        alert(`You can only upload up to 5 images. You have ${imagePreviews.length} images and tried to add ${files.length}.`);
+        return;
+      }
+      setIsCompressing(true);
+      const newImages: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const compressed = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const comp = await compressImage(reader.result as string);
+            resolve(comp);
+          };
+          reader.readAsDataURL(file);
+        });
+        newImages.push(compressed);
+      }
+      setImagePreviews(prev => [...prev, ...newImages]);
+      setIsCompressing(false);
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setIsCompressing(true);
+      if (file.size > 2.5 * 1024 * 1024) {
+        setVideoError("Video file is too large. Please select a video smaller than 2.5MB, or embed a YouTube link instead.");
+        setVideoPreview(null);
+        return;
+      }
+      setVideoError(null);
       const reader = new FileReader();
-      reader.onloadend = async () => {
-        const compressed = await compressImage(reader.result as string);
-        setImagePreview(compressed);
-        setIsCompressing(false);
+      reader.onloadend = () => {
+        setVideoPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRemoveVideo = () => {
+    setVideoPreview(null);
+    setVideoError(null);
+    if (videoFileInputRef.current) videoFileInputRef.current.value = '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -198,7 +255,10 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
         venue: formData.venue || addressInput,
         userCreated: true,
         isTrending: eventToEdit?.isTrending || false,
-        imageUrl: imagePreview || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800`,
+        imageUrl: imagePreviews[0] || eventToEdit?.imageUrl || `https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800`,
+        imageUrls: imagePreviews,
+        videoUrl: videoPreview || null,
+        youtubeUrl: youtubeInput ? parseYoutubeUrl(youtubeInput) : null,
         createdAt: eventToEdit?.createdAt || serverTimestamp(),
         orgId: postAsOrg && userOrg ? userOrg.id : (eventToEdit?.orgId || null),
         organizerName: postAsOrg && userOrg ? userOrg.name : (eventToEdit?.organizerName || null),
@@ -267,36 +327,94 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-8">
+          {/* YouTube Embed Link */}
           <div className="space-y-2">
-            <label className={labelClasses}>Cover Image</label>
+            <label className={labelClasses}>YouTube Video Link (Optional)</label>
+            <input 
+              type="url" 
+              placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ" 
+              value={youtubeInput} 
+              onChange={e => setYoutubeInput(e.target.value)} 
+              className={inputClasses}
+            />
+          </div>
+
+          {/* Video Promo Upload */}
+          <div className="space-y-2">
+            <label className={labelClasses}>Promotional Video (Max 2.5MB - Optional)</label>
+            {videoError && (
+              <p className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-2">{videoError}</p>
+            )}
+            
             <div 
-              onClick={() => !imagePreview && !isCompressing && fileInputRef.current?.click()}
-              className={`relative h-60 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${imagePreview ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
+              onClick={() => !videoPreview && videoFileInputRef.current?.click()}
+              className={`relative h-44 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${videoPreview ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
             >
-              {isCompressing ? (
-                <div className="text-center">
-                  <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Optimizing Metropolitan Signal...</p>
-                </div>
-              ) : imagePreview ? (
-                <>
-                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-all" />
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setImagePreview(null); }} className="absolute top-4 right-4 p-3 bg-white/20 backdrop-blur-md text-white rounded-2xl hover:bg-red-600 transition-all">
-                    <X className="w-5 h-5" />
+              {videoPreview ? (
+                <div className="relative w-full h-full bg-black">
+                  <video src={videoPreview} controls className="w-full h-full object-cover" />
+                  <button 
+                    type="button" 
+                    onClick={handleRemoveVideo} 
+                    className="absolute top-4 right-4 p-2 bg-black/50 text-white rounded-xl hover:bg-red-600 transition-all z-10"
+                  >
+                    <X className="w-4 h-4" />
                   </button>
-                </>
+                </div>
               ) : (
-                <div className="text-center p-8">
-                  <div className="w-16 h-16 bg-gray-100 text-black rounded-[1.5rem] flex items-center justify-center mx-auto mb-4 rotate-3 group-hover:rotate-0 transition-transform">
-                    <ImageIcon className="w-8 h-8" />
+                <div className="text-center p-6">
+                  <div className="w-12 h-12 bg-gray-105 text-black rounded-xl flex items-center justify-center mx-auto mb-2">
+                    <Video className="w-5 h-5" />
                   </div>
-                  <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Add High-Res Event Photo</p>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-2">JPG, PNG up to 10MB</p>
+                  <p className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Click to upload video</p>
+                  <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest mt-1">MP4, WebM under 2.5MB</p>
                 </div>
               )}
-              <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+              <input type="file" ref={videoFileInputRef} onChange={handleVideoChange} accept="video/*" className="hidden" />
             </div>
+          </div>
+
+          {/* Multiple Cover Images Upload */}
+          <div className="space-y-2">
+            <label className={labelClasses}>Event Images (Max 5 - First is Cover)</label>
+            <div className="grid grid-cols-5 gap-4">
+              {imagePreviews.map((img, index) => (
+                <div key={index} className="relative aspect-square rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 group">
+                  <img src={img} alt="preview" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button 
+                      type="button" 
+                      onClick={() => handleRemoveImage(index)} 
+                      className="p-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {index === 0 && (
+                    <span className="absolute bottom-1 left-1 bg-black/80 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-md tracking-widest">Cover</span>
+                  )}
+                </div>
+              ))}
+              
+              {imagePreviews.length < 5 && (
+                <button
+                  type="button"
+                  disabled={isCompressing}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="aspect-square rounded-2xl border-2 border-dashed border-gray-200 hover:border-black flex flex-col items-center justify-center bg-gray-50/50 hover:bg-gray-50 transition-all cursor-pointer"
+                >
+                  {isCompressing ? (
+                    <div className="w-4 h-4 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 text-gray-400 mb-1" />
+                      <span className="text-[7px] font-black uppercase text-gray-500 tracking-wider">Add Photo</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+            <input type="file" ref={fileInputRef} onChange={handleMultipleImagesChange} accept="image/*" multiple className="hidden" />
           </div>
 
           {userOrg && (

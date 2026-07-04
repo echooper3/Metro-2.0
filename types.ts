@@ -45,6 +45,9 @@ export interface EventActivity {
   createdAt?: any;
   updatedAt?: any;
   orgId?: string;
+  imageUrls?: string[];
+  videoUrl?: string;
+  youtubeUrl?: string;
 }
 
 export interface Organization {
