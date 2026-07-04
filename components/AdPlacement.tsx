@@ -134,7 +134,7 @@ const AdPlacement: React.FC<AdPlacementProps> = ({ type, cityId, className = '',
           animate={{ opacity: 1, y: 0 }}
           className={`bg-black text-white py-3 px-4 flex items-center justify-center gap-4 text-center relative overflow-hidden ${className}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-r from-orange-600/10 via-transparent to-orange-600/10 animate-pulse" />
+          <div className="absolute inset-0 bg-gradient-to-r from-orange-600/10 via-transparent to-orange-600/10 animate-pulse pointer-events-none" />
           <span className="text-[9px] font-black uppercase tracking-[0.4em] text-orange-500 whitespace-nowrap flex items-center shrink-0">
             <Sparkles className="w-3 h-3 mr-2" /> Sponsorship
           </span>
@@ -227,7 +227,7 @@ const AdPlacement: React.FC<AdPlacementProps> = ({ type, cityId, className = '',
         animate={{ opacity: 1, y: 0 }}
         className={`bg-black text-white py-3 px-4 flex items-center justify-center gap-4 text-center relative overflow-hidden ${className}`}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-orange-600/20 via-transparent to-orange-600/20 animate-pulse" />
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-600/20 via-transparent to-orange-600/20 animate-pulse pointer-events-none" />
         <span className="text-[9px] font-black uppercase tracking-[0.4em] text-orange-500 whitespace-nowrap flex items-center shrink-0">
           <Sparkles className="w-3 h-3 mr-2" /> {ad.tag || 'Sponsorship'}
         </span>
