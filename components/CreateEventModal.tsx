@@ -41,11 +41,32 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
 
 const formatDateToInput = (dateStr?: string) => {
   if (!dateStr) return '';
+  
+  // 1. If it's already in YYYY-MM-DD format, return it
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  
+  // 2. Try parsing MM/DD/YYYY or similar slash formats
   const parts = dateStr.split('/');
   if (parts.length === 3) {
     const [m, d, y] = parts;
+    if (m.length === 4) {
+      return `${m}-${d.padStart(2, '0')}-${y.padStart(2, '0')}`;
+    }
     return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
+
+  // 3. Fallback to standard JS Date parsing for natural strings
+  const parsed = Date.parse(dateStr);
+  if (!isNaN(parsed)) {
+    const date = new Date(parsed);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
   return dateStr;
 };
 

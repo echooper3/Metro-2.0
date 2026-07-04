@@ -53,7 +53,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [pendingOnboardingData, setPendingOnboardingData] = useState<{ favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean } | null>(null);
+  const [pendingOnboardingData, setPendingOnboardingData] = useState<{ favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean; accountType?: 'individual' | 'organizer' | 'business' } | null>(null);
   const pendingOnboardingDataRef = useRef(pendingOnboardingData);
   useEffect(() => {
     pendingOnboardingDataRef.current = pendingOnboardingData;
@@ -61,7 +61,7 @@ const App: React.FC = () => {
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   const [userOrg, setUserOrg] = useState<Organization | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
-  const isAdmin = !!user;
+  const isAdmin = !!user && (user.role === 'admin' || user.email === 'admin@inside-the-metro.com');
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -157,7 +157,7 @@ const App: React.FC = () => {
     }
   }, [isAuthReady, user]);
 
-  const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => {
+  const handleCompleteOnboarding = async (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean; accountType?: 'individual' | 'organizer' | 'business' }) => {
     if (user) {
       try {
         const userRef = doc(db, 'users', user.id);
@@ -170,6 +170,9 @@ const App: React.FC = () => {
         const updates: any = { preferences: updatedPrefs };
         if (data.isOrganizer !== undefined) {
           updates.isOrganizer = data.isOrganizer;
+        }
+        if (data.accountType !== undefined) {
+          updates.accountType = data.accountType;
         }
         await updateDoc(userRef, updates);
         setUser(prev => prev ? { ...prev, ...updates } : null);
@@ -421,6 +424,9 @@ const App: React.FC = () => {
               if (pending.isOrganizer !== undefined) {
                 userData.isOrganizer = pending.isOrganizer;
               }
+              if (pending.accountType !== undefined) {
+                userData.accountType = pending.accountType;
+              }
               pendingOnboardingDataRef.current = null;
               setPendingOnboardingData(null);
               setShowOnboarding(false);
@@ -442,6 +448,9 @@ const App: React.FC = () => {
               };
               if (pending.isOrganizer !== undefined) {
                 userData.isOrganizer = pending.isOrganizer;
+              }
+              if (pending.accountType !== undefined) {
+                userData.accountType = pending.accountType;
               }
               pendingOnboardingDataRef.current = null;
               setPendingOnboardingData(null);
@@ -1129,7 +1138,7 @@ const App: React.FC = () => {
                         rel="noopener noreferrer" 
                         className="inline-flex items-center px-10 py-5 bg-black text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]"
                       >
-                        Official Listing
+                        {detailedEvent.id && (detailedEvent.id.startsWith('tm-') || detailedEvent.id.startsWith('eb-')) ? 'Get Tickets' : 'Official Listing'}
                         <ArrowRight className="w-4 h-4 ml-3" />
                       </motion.a>
                     )}

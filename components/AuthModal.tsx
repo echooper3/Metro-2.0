@@ -14,7 +14,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
-  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [accountType, setAccountType] = useState<'individual' | 'organizer' | 'business'>('individual');
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
@@ -80,7 +80,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             birthday: formData.birthday,
             zipCode: formData.zip_code,
             metroId: formData.user_id,
-            isOrganizer: isOrganizer,
+            isOrganizer: accountType === 'organizer',
+            accountType: accountType,
             savedEvents: [],
             preferences: { favoriteCategories: [] },
             createdAt: new Date().toISOString()
@@ -244,24 +245,31 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 <Calendar className="absolute left-4 top-[42px] w-4 h-4 text-gray-300" />
               </div>
 
-              <div className="flex items-center justify-between p-6 bg-gray-50 rounded-2xl border-2 border-transparent hover:border-black transition-all gap-4">
-                <div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Account Role</span>
-                  <h4 className="text-xs font-black text-gray-900 uppercase">Register as Event Organizer</h4>
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">Gives access to establish and manage official organization hubs.</p>
+              <div className="space-y-4">
+                <label className={labelClasses}>Account Type *</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['individual', 'organizer', 'business'] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setAccountType(type)}
+                      className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center gap-2 ${
+                        accountType === type
+                          ? 'border-orange-500 bg-orange-50 text-orange-600'
+                          : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-black hover:text-black'
+                      }`}
+                    >
+                      <span className="text-[10px] font-black uppercase tracking-widest leading-none">
+                        {type === 'individual' ? 'Individual' : type === 'organizer' ? 'Organizer' : 'Business'}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOrganizer(!isOrganizer)}
-                  className={`w-12 h-7 rounded-full transition-all relative flex items-center px-1 shrink-0 ${isOrganizer ? 'bg-orange-600' : 'bg-gray-200'} cursor-pointer`}
-                >
-                  <motion.div 
-                    layout
-                    className="w-5 h-5 bg-white rounded-full shadow-md"
-                    style={{ x: isOrganizer ? 20 : 0 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  />
-                </button>
+                <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest ml-1 leading-relaxed">
+                  {accountType === 'individual' && 'Standard account. Browse and save events to your personal vault.'}
+                  {accountType === 'organizer' && 'For event hosts. Establish organizations and publish official events.'}
+                  {accountType === 'business' && 'For businesses/venues. Promote sponsorships and host premium listings.'}
+                </p>
               </div>
             </>
           )}

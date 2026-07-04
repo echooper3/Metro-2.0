@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { UserProfile, EventActivity, Category, AppView, Organization } from '../types';
+import React, { useState, useRef } from 'react';
+import { UserProfile, EventActivity, Category, AppView, Organization, SponsorshipSubmission } from '../types';
 import { CATEGORIES, CITIES } from '../constants';
 import EventItem from './EventItem';
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment, getDoc, setDoc, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment, getDoc, setDoc, getDocs, arrayUnion, arrayRemove, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import bulkEvents from '../src/data/events.json';
 import { 
   User, 
@@ -30,8 +30,32 @@ import {
   CheckCircle2,
   Building2,
   Users,
-  Globe
+  Globe,
+  Megaphone,
+  Upload
 } from 'lucide-react';
+
+const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
+      } else {
+        if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+  });
+};
 
 interface ProfileViewProps {
   user: UserProfile;
@@ -66,7 +90,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   isAdmin,
   isFirebaseConnected
 }) => {
-  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'org' | 'preferences' | 'settings' | 'privacy' | 'admin'>('saved');
+  const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'org' | 'preferences' | 'settings' | 'privacy' | 'admin' | 'sponsorships'>('saved');
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
   const [editPhone, setEditPhone] = useState(user.phone || '');
@@ -88,6 +112,108 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   // Creation form fields
   const [orgName, setOrgName] = useState('');
   const [orgDesc, setOrgDesc] = useState('');
+
+  // Sponsorship states
+  const [sponsorships, setSponsorships] = useState<SponsorshipSubmission[]>([]);
+  const [sponsorshipsLoading, setSponsorshipsLoading] = useState(true);
+  const [allAdsForMetrics, setAllAdsForMetrics] = useState<any[]>([]); // To show live metrics
+  const [newSponTitle, setNewSponTitle] = useState('');
+  const [newSponTag, setNewSponTag] = useState('Sponsorship');
+  const [newSponDescription, setNewSponDescription] = useState('');
+  const [newSponCta, setNewSponCta] = useState('');
+  const [newSponImage, setNewSponImage] = useState('');
+  const [newSponUrl, setNewSponUrl] = useState('');
+  const [newSponCityId, setNewSponCityId] = useState('general');
+  const [isCompressingSpon, setIsCompressingSpon] = useState(false);
+  const [isSubmittingSpon, setIsSubmittingSpon] = useState(false);
+  const sponFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSponImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsCompressingSpon(true);
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setNewSponImage(compressed);
+        setIsCompressingSpon(false);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSubmitSponsorship = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSponTitle || !newSponCta || !newSponImage || isSubmittingSpon || isCompressingSpon) return;
+    setIsSubmittingSpon(true);
+    
+    try {
+      const sponRef = doc(collection(db, 'sponsorships'));
+      const newSubmission: SponsorshipSubmission = {
+        id: sponRef.id,
+        userId: user.id,
+        userEmail: user.email,
+        userName: user.name,
+        title: newSponTitle,
+        tag: newSponTag || 'Sponsorship',
+        description: newSponDescription,
+        cta: newSponCta,
+        image: newSponImage,
+        url: newSponUrl,
+        cityId: newSponCityId,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      };
+      
+      await setDoc(sponRef, newSubmission);
+      
+      // Reset Form
+      setNewSponTitle('');
+      setNewSponTag('Sponsorship');
+      setNewSponDescription('');
+      setNewSponCta('');
+      setNewSponImage('');
+      setNewSponUrl('');
+      setNewSponCityId('general');
+      if (sponFileInputRef.current) sponFileInputRef.current.value = '';
+      
+      alert("Sponsorship inquiry submitted successfully! Our administrators will review it shortly.");
+    } catch (err) {
+      console.error("Failed to submit sponsorship inquiry:", err);
+      alert("Failed to submit sponsorship inquiry. Please try again.");
+    } finally {
+      setIsSubmittingSpon(false);
+    }
+  };
+
+  // Listen to user's sponsorships in real-time
+  React.useEffect(() => {
+    if (!user.id) return;
+    const q = query(
+      collection(db, 'sponsorships'),
+      where('userId', '==', user.id),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SponsorshipSubmission));
+      setSponsorships(data);
+      setSponsorshipsLoading(false);
+    }, (error) => {
+      console.error("Firestore onSnapshot Error [sponsorships]:", error);
+      setSponsorshipsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user.id]);
+
+  // Listen to live ads collection in real time to show click / impression performance metrics
+  React.useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'ads'), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllAdsForMetrics(data);
+    });
+    return () => unsubscribe();
+  }, []);
   const [orgWebsite, setOrgWebsite] = useState('');
   const [orgEmail, setOrgEmail] = useState(user.email || '');
   const [orgPhone, setOrgPhone] = useState('');
@@ -475,6 +601,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           { id: 'saved', label: 'Saved Signals', icon: Heart },
           { id: 'submissions', label: 'My Submissions', icon: Zap },
           { id: 'org', label: 'Organization Hub', icon: Building2 },
+          ...(user?.isOrganizer || user?.accountType === 'business' ? [{ id: 'sponsorships', label: 'Sponsorships', icon: Megaphone }] : []),
           { id: 'preferences', label: 'Hub Preferences', icon: Tag },
           { id: 'settings', label: 'Account Settings', icon: Settings },
           { id: 'privacy', label: 'Privacy Dashboard', icon: Lock },
@@ -1246,6 +1373,231 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       )}
                     </div>
                   </div>
+                </div>
+              </div>
+            </motion.div>
+          </ErrorBoundary>
+        )}
+        {activeTab === 'sponsorships' && (user.isOrganizer || user.accountType === 'business') && (
+          <ErrorBoundary>
+            <motion.div
+              key="sponsorships-tab"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-12 animate-fade-in"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-orange-50 rounded-[1.25rem] flex items-center justify-center">
+                  <Megaphone className="w-6 h-6 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Sponsorship Hub</h3>
+                  <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px] mt-1">Submit & manage your local sponsorship listings</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+                {/* Left Side: Submission History */}
+                <div className="lg:col-span-7 space-y-6">
+                  <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest pb-3 border-b border-gray-100">
+                    My Applications ({sponsorships.length})
+                  </h4>
+                  
+                  {sponsorshipsLoading ? (
+                    <div className="py-12 text-center">
+                      <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading submissions...</p>
+                    </div>
+                  ) : sponsorships.length === 0 ? (
+                    <div className="py-16 text-center bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200">
+                      <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No sponsorships submitted yet</p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">Fill out the form on the right to broadcast your brand</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {sponsorships.map((sub) => {
+                        const liveAd = allAdsForMetrics.find(ad => ad.title === sub.title && ad.cityId === sub.cityId);
+                        
+                        return (
+                          <div key={sub.id} className="p-6 bg-white border border-gray-100 rounded-[2rem] hover:shadow-xl hover:shadow-gray-100 transition-all space-y-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex items-center gap-4">
+                                {sub.image && (
+                                  <div className="w-16 h-12 rounded-xl overflow-hidden shrink-0 border border-gray-100">
+                                    <img src={sub.image} alt={sub.title} className="w-full h-full object-cover" />
+                                  </div>
+                                )}
+                                <div>
+                                  <h5 className="text-sm font-black text-gray-900 uppercase tracking-tight">{sub.title}</h5>
+                                  <span className="text-[8px] font-black uppercase tracking-widest text-orange-600 block mt-1">{sub.tag}</span>
+                                </div>
+                              </div>
+                              <span className={`px-4 py-1.5 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                                sub.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
+                                sub.status === 'declined' ? 'bg-red-50 text-red-600' :
+                                'bg-orange-50 text-orange-600'
+                              }`}>
+                                {sub.status}
+                              </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-55 text-left">
+                              <div>
+                                <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block mb-1">Target Hub</span>
+                                <span className="text-[10px] font-black text-gray-900 uppercase">
+                                  {sub.cityId === 'general' ? 'All Hubs' : sub.cityId}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block mb-1">Impressions</span>
+                                <span className="text-[10px] font-black text-gray-900">
+                                  {liveAd ? liveAd.impressions || 0 : '-'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block mb-1">Clicks</span>
+                                <span className="text-[10px] font-black text-gray-900">
+                                  {liveAd ? liveAd.clicks || 0 : '-'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Right Side: Submission Form */}
+                <div className="lg:col-span-5 bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
+                  <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-6">
+                    New Sponsorship Request
+                  </h4>
+                  
+                  <form onSubmit={handleSubmitSponsorship} className="space-y-6">
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Campaign Title *</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="e.g. Summer Music Series" 
+                        value={newSponTitle}
+                        onChange={(e) => setNewSponTitle(e.target.value)}
+                        className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Tag *</label>
+                        <input 
+                          required
+                          type="text" 
+                          placeholder="e.g. Sponsorship" 
+                          value={newSponTag}
+                          onChange={(e) => setNewSponTag(e.target.value)}
+                          className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Target Hub *</label>
+                        <select
+                          value={newSponCityId}
+                          onChange={(e) => setNewSponCityId(e.target.value)}
+                          className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        >
+                          <option value="general">All Hubs (General)</option>
+                          {CITIES.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">CTA Button Label *</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="e.g. Buy Tickets" 
+                        value={newSponCta}
+                        onChange={(e) => setNewSponCta(e.target.value)}
+                        className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Redirect URL *</label>
+                      <input 
+                        required
+                        type="url" 
+                        placeholder="https://yourbrand.com/campaign" 
+                        value={newSponUrl}
+                        onChange={(e) => setNewSponUrl(e.target.value)}
+                        className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Description *</label>
+                      <textarea 
+                        required
+                        placeholder="Provide details about what you are promoting..." 
+                        value={newSponDescription}
+                        onChange={(e) => setNewSponDescription(e.target.value)}
+                        className="w-full bg-white border-2 border-transparent rounded-2xl py-4 px-6 h-24 resize-none text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Cover Image *</label>
+                      <div 
+                        onClick={() => !newSponImage && !isCompressingSpon && sponFileInputRef.current?.click()}
+                        className={`relative h-32 w-full rounded-2xl border-2 border-dashed bg-white transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${newSponImage ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
+                      >
+                        {isCompressingSpon ? (
+                          <div className="text-center">
+                            <div className="w-6 h-6 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                            <p className="text-[8px] font-black text-orange-600 uppercase tracking-widest">Optimizing Image...</p>
+                          </div>
+                        ) : newSponImage ? (
+                          <>
+                            <img src={newSponImage} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/20 hover:bg-black/40 transition-all flex items-center justify-center" />
+                            <button 
+                              type="button" 
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                setNewSponImage(''); 
+                                if (sponFileInputRef.current) sponFileInputRef.current.value = '';
+                              }} 
+                              className="absolute top-2 right-2 p-2 bg-white/20 backdrop-blur-md text-white rounded-xl hover:bg-red-600 transition-all z-10"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <div className="text-center p-4">
+                            <div className="w-8 h-8 bg-gray-55 text-black rounded-lg flex items-center justify-center mx-auto mb-2">
+                              <Upload className="w-4 h-4" />
+                            </div>
+                            <p className="text-[8px] font-black text-gray-900 uppercase tracking-widest">Click to Upload Cover Image</p>
+                          </div>
+                        )}
+                        <input type="file" ref={sponFileInputRef} onChange={handleSponImageChange} accept="image/*" className="hidden" />
+                      </div>
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      disabled={isSubmittingSpon || isCompressingSpon}
+                      className="w-full py-5 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isSubmittingSpon ? "Submitting Inquiry..." : "Submit Inquiry"}
+                    </button>
+                  </form>
                 </div>
               </div>
             </motion.div>

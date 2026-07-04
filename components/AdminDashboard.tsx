@@ -3,14 +3,14 @@ import { AnimatePresence, motion } from 'motion/react';
 import { 
   TrendingUp, Users, Zap, MapPin, Globe, Clock, ArrowUpRight, Activity, 
   BarChart3, Search, Heart, LayoutGrid, X, Trash2, Megaphone, PlusCircle, 
-  Eye, MousePointerClick, Percent, RefreshCw, CheckCircle2, AlertCircle, Upload 
+  Eye, MousePointerClick, Percent, RefreshCw, CheckCircle2, AlertCircle, Upload, Inbox 
 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { 
   collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, 
   serverTimestamp, updateDoc, increment, writeBatch, deleteDoc 
 } from 'firebase/firestore';
-import { UserProfile } from '../types';
+import { UserProfile, SponsorshipSubmission } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { CITIES } from '../constants';
 import { fetchEvents } from '../services/geminiService';
@@ -71,7 +71,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'analytics' | 'ads'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'ads' | 'inbox'>('analytics');
+
+  // Inbox states
+  const [submissions, setSubmissions] = useState<SponsorshipSubmission[]>([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(true);
 
   // Ads Management State
   const [ads, setAds] = useState<Ad[]>([]);
@@ -137,13 +141,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
       console.error('Firestore onSnapshot Error [ads]:', error);
     });
 
+    // Fetch sponsorships in real time
+    const unsubscribeSponsorships = onSnapshot(
+      query(collection(db, 'sponsorships'), orderBy('createdAt', 'desc')),
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SponsorshipSubmission));
+        setSubmissions(data);
+        setSubmissionsLoading(false);
+      },
+      (error) => {
+        console.error("Firestore onSnapshot Error [sponsorships]:", error);
+        setSubmissionsLoading(false);
+      }
+    );
+
     return () => {
       unsubscribeStats();
       unsubscribeUsers();
       unsubscribeEvents();
       unsubscribeAds();
+      unsubscribeSponsorships();
     };
   }, []);
+
+  const handleApproveSponsorship = async (sub: SponsorshipSubmission) => {
+    if (!window.confirm(`Approve and launch "${sub.title}" as a live ad signal?`)) return;
+    try {
+      // 1. Create matching ad doc in 'ads'
+      const newAdRef = doc(collection(db, 'ads'));
+      await setDoc(newAdRef, {
+        id: newAdRef.id,
+        title: sub.title,
+        tag: sub.tag || 'Sponsorship',
+        description: sub.description || '',
+        cta: sub.cta,
+        image: sub.image,
+        url: sub.url,
+        cityId: sub.cityId,
+        clicks: 0,
+        impressions: 0,
+        createdAt: serverTimestamp()
+      });
+
+      // 2. Update status of the sponsorship
+      await updateDoc(doc(db, 'sponsorships', sub.id), {
+        status: 'approved',
+        updatedAt: serverTimestamp()
+      });
+
+      alert("Sponsorship approved and activated successfully!");
+    } catch (err) {
+      console.error("Failed to approve sponsorship:", err);
+      alert("Failed to approve sponsorship. Please try again.");
+    }
+  };
+
+  const handleDeclineSponsorship = async (sub: SponsorshipSubmission) => {
+    if (!window.confirm(`Are you sure you want to decline the sponsorship "${sub.title}"?`)) return;
+    try {
+      await updateDoc(doc(db, 'sponsorships', sub.id), {
+        status: 'declined',
+        updatedAt: serverTimestamp()
+      });
+      alert("Sponsorship declined.");
+    } catch (err) {
+      console.error("Failed to decline sponsorship:", err);
+      alert("Failed to decline sponsorship. Please try again.");
+    }
+  };
 
   const handlePublishAd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -538,8 +603,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
             <h1 className="text-6xl md:text-8xl font-black text-gray-900 tracking-tighter uppercase italic leading-[0.85]">
               {activeTab === 'analytics' ? (
                 <>Traffic <span className="text-orange-600">Analytics</span></>
-              ) : (
+              ) : activeTab === 'ads' ? (
                 <>Sponsorship <span className="text-orange-600">Signals</span></>
+              ) : (
+                <>Partner <span className="text-orange-600">Inbox</span></>
               )}
             </h1>
           </div>
@@ -566,6 +633,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
             >
               <Megaphone className="w-4 h-4" />
               Sponsorships
+            </button>
+            <button
+              onClick={() => setActiveTab('inbox')}
+              className={`flex items-center gap-2 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'inbox' 
+                  ? 'bg-black text-white shadow-xl shadow-black/10' 
+                  : 'text-gray-400 hover:text-black'
+              }`}
+            >
+              <Inbox className="w-4 h-4" />
+              Inbox
             </button>
           </div>
         </div>
@@ -887,7 +965,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
                 </div>
               </div>
             </motion.div>
-          ) : (
+          ) : activeTab === 'ads' ? (
             <motion.div
               key="ads-tab"
               initial={{ opacity: 0, y: 15 }}
@@ -1186,6 +1264,95 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
                   </div>
                 </div>
 
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="inbox-tab"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-8 animate-fade-in"
+            >
+              <div className="bg-white rounded-[2.5rem] p-10 border border-gray-100">
+                <h3 className="text-xl font-black uppercase tracking-tight mb-8">
+                  Pending Sponsorship Requests ({submissions.filter(s => s.status === 'pending').length})
+                </h3>
+
+                {submissionsLoading ? (
+                  <div className="py-20 text-center">
+                    <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Retrieving partner signals...</p>
+                  </div>
+                ) : submissions.filter(s => s.status === 'pending').length === 0 ? (
+                  <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                    <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-4" />
+                    <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Inbox is empty</h4>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">All organizer requests have been processed</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {submissions.filter(s => s.status === 'pending').map((sub) => (
+                      <div key={sub.id} className="p-8 bg-gray-50 rounded-[2rem] border border-gray-100 flex flex-col justify-between space-y-6">
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Submitted by</span>
+                              <h5 className="text-xs font-black text-gray-900 uppercase">{sub.userName || 'Organizer'}</h5>
+                              <p className="text-[9px] text-gray-400 font-bold tracking-widest lowercase mt-0.5">{sub.userEmail}</p>
+                            </div>
+                            <span className="px-4 py-1.5 bg-orange-100 text-orange-600 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+                              Pending Review
+                            </span>
+                          </div>
+
+                          {sub.image && (
+                            <div className="aspect-[16/9] w-full rounded-2xl overflow-hidden border border-gray-200 bg-white">
+                              <img src={sub.image} alt={sub.title} className="w-full h-full object-cover" />
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">{sub.title}</h4>
+                              <span className="text-[9px] font-black text-white bg-black px-3 py-1 rounded-full uppercase tracking-widest">{sub.cityId === 'general' ? 'All Hubs' : sub.cityId}</span>
+                            </div>
+                            <p className="text-[10px] text-gray-550 font-bold uppercase tracking-widest mt-1">{sub.tag || 'Sponsorship'}</p>
+                            <p className="text-xs text-gray-500 leading-relaxed mt-2">{sub.description}</p>
+                          </div>
+
+                          <div className="p-4 bg-white rounded-xl border border-gray-100 space-y-2 text-left">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block">Target Action</span>
+                            <div className="flex justify-between items-center gap-4">
+                              <a href={sub.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-black hover:text-orange-600 underline uppercase tracking-widest truncate">
+                                {sub.url}
+                              </a>
+                              <span className="bg-gray-100 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-gray-700 shrink-0">
+                                {sub.cta}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200/50">
+                          <button
+                            onClick={() => handleDeclineSponsorship(sub)}
+                            className="py-4 border-2 border-red-200 hover:border-red-600 hover:bg-red-50 text-red-600 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => handleApproveSponsorship(sub)}
+                            className="py-4 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-black/10"
+                          >
+                            Approve & Publish
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </motion.div>
           )}

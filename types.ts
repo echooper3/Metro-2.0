@@ -81,6 +81,8 @@ export interface UserProfile {
   phone?: string;
   birthday?: string;
   zipCode?: string;
+  role?: 'admin' | 'user';
+  accountType?: 'individual' | 'organizer' | 'business';
   savedEvents: EventActivity[]; // Full objects for persistence across hubs
   syncStats?: {
     lastSyncAt?: string;
@@ -107,3 +109,20 @@ export type Category =
   | 'Arts & Culture' 
   | 'Outdoors' 
   | 'Community';
+
+export interface SponsorshipSubmission {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string;
+  title: string;
+  tag: string;
+  description: string;
+  cta: string;
+  image: string;
+  url: string;
+  cityId: string;
+  status: 'pending' | 'approved' | 'declined';
+  createdAt: any;
+  updatedAt?: any;
+}

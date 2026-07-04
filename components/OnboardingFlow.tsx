@@ -6,7 +6,7 @@ import { CITIES, CATEGORIES } from '../constants';
 
 interface OnboardingFlowProps {
   user: UserProfile | null;
-  onComplete: (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean }) => void;
+  onComplete: (data: { favoriteCity: string; favoriteCategories: Category[]; isOrganizer?: boolean; accountType?: 'individual' | 'organizer' | 'business' }) => void;
   onClose: () => void;
   isDismissible?: boolean;
   onSignInClick?: () => void;
@@ -16,7 +16,9 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
   const [step, setStep] = useState(1);
   const [selectedCity, setSelectedCity] = useState<string>(user?.preferences?.favoriteCity || '');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>(user?.preferences?.favoriteCategories || []);
-  const [isOrganizer, setIsOrganizer] = useState<boolean>(user?.isOrganizer || false);
+  const [accountType, setAccountType] = useState<'individual' | 'organizer' | 'business'>(
+    user?.accountType || (user?.isOrganizer ? 'organizer' : 'individual')
+  );
 
   const totalSteps = 5;
 
@@ -40,7 +42,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
     onComplete({
       favoriteCity: selectedCity,
       favoriteCategories: selectedCategories,
-      isOrganizer: isOrganizer
+      isOrganizer: accountType === 'organizer',
+      accountType: accountType
     });
   };
 
@@ -245,25 +248,37 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                   </div>
                   <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Choose Role</h2>
                 </div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Would you like to register as an event organizer?</p>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Select the type of account you want to establish.</p>
                 
-                <div className="flex items-center justify-between p-8 bg-gray-50 rounded-[2rem] border-2 border-transparent hover:border-black transition-all gap-6">
-                  <div className="text-left">
-                    <h4 className="text-xs font-black text-gray-900 uppercase">Join as Organizer</h4>
-                    <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">This grants you the ability to establish organization profiles and post events under organization brands.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsOrganizer(!isOrganizer)}
-                    className={`w-14 h-8 rounded-full transition-all relative flex items-center px-1 shrink-0 ${isOrganizer ? 'bg-orange-600' : 'bg-gray-200'} cursor-pointer`}
-                  >
-                    <motion.div 
-                      layout
-                      className="w-6 h-6 bg-white rounded-full shadow-md"
-                      style={{ x: isOrganizer ? 24 : 0 }}
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
-                  </button>
+                <div className="grid grid-cols-1 gap-4 max-h-[320px] overflow-y-auto pr-1">
+                  {(['individual', 'organizer', 'business'] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setAccountType(type)}
+                      className={`p-6 rounded-[2rem] border-2 transition-all text-left flex items-start gap-4 ${
+                        accountType === type
+                          ? 'border-orange-500 bg-orange-50'
+                          : 'border-gray-100 bg-white hover:border-black'
+                      }`}
+                    >
+                      <div className="flex-grow">
+                        <h4 className="text-xs font-black text-gray-900 uppercase">
+                          {type === 'individual' ? 'Individual Member' : type === 'organizer' ? 'Event Organizer' : 'Business Partner'}
+                        </h4>
+                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">
+                          {type === 'individual' && 'Browse, save events to your personal vault, and connect with the community.'}
+                          {type === 'organizer' && 'Establish official organization hubs, post public/private events, and manage members.'}
+                          {type === 'business' && 'Promote sponsored events, upload sponsorships, and connect with metropolitan audiences.'}
+                        </p>
+                      </div>
+                      {accountType === type && (
+                        <div className="mt-1">
+                          <CheckCircle2 className="w-4 h-4 text-orange-500" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -301,7 +316,9 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-[9px] font-black uppercase text-gray-400">Account Role</span>
-                      <span className="text-[9px] font-black uppercase text-black">{isOrganizer ? 'Organizer' : 'Member'}</span>
+                      <span className="text-[9px] font-black uppercase text-black">
+                        {accountType === 'individual' ? 'Individual' : accountType === 'organizer' ? 'Organizer' : 'Business'}
+                      </span>
                     </div>
                   </div>
                 </div>

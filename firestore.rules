@@ -24,7 +24,9 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn();
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function incoming() {
@@ -53,7 +55,9 @@ service cloud.firestore {
              (!('zipCode' in data) || data.zipCode is string) &&
              (!('orgId' in data) || data.orgId is string) &&
              (!('orgRole' in data) || data.orgRole is string) &&
-             (!('isOrganizer' in data) || data.isOrganizer is bool);
+             (!('isOrganizer' in data) || data.isOrganizer is bool) &&
+             (!('accountType' in data) || data.accountType is string) &&
+             (!('role' in data) || data.role is string);
     }
 
     function isValidEvent(data) {
@@ -89,11 +93,26 @@ service cloud.firestore {
              data.tag is string && data.tag.size() <= 50 &&
              data.description is string && data.description.size() <= 1000 &&
              data.cta is string && data.cta.size() <= 50 &&
-             data.image is string && data.image.size() <= 1000 &&
+             data.image is string && data.image.size() <= 200000 &&
              data.url is string && data.url.size() <= 1000 &&
              data.cityId is string &&
              data.clicks is number && data.clicks >= 0 &&
              data.impressions is number && data.impressions >= 0;
+    }
+
+    function isValidSponsorship(data) {
+      return data.id is string &&
+             data.userId is string &&
+             data.userEmail is string &&
+             data.userName is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 150 &&
+             data.tag is string && data.tag.size() <= 50 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.cta is string && data.cta.size() <= 50 &&
+             data.image is string && data.image.size() <= 200000 &&
+             data.url is string && data.url.size() <= 1000 &&
+             data.cityId is string &&
+             data.status is string && (data.status == 'pending' || data.status == 'approved' || data.status == 'declined');
     }
 
 
@@ -111,7 +130,7 @@ service cloud.firestore {
 
       allow update: if (isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) &&
                     // Action-Based Update: Profile synchronization
-                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer'])) &&
+                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer', 'accountType'])) &&
                     !('role' in incoming())) 
                     || isAdmin();
     }
@@ -172,6 +191,25 @@ service cloud.firestore {
                         incoming().impressions >= existing().impressions)
                     || (isAdmin() && isValidAd(incoming()));
       allow delete: if isAdmin();
+    }
+
+    match /sponsorships/{sponsorshipId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isSignedIn() && isValidId(sponsorshipId) &&
+                    isValidSponsorship(incoming()) &&
+                    incoming().id == sponsorshipId &&
+                    incoming().userId == request.auth.uid &&
+                    incoming().status == 'pending' &&
+                    incoming().createdAt == request.time;
+      allow update: if (isSignedIn() && request.auth.uid == existing().userId &&
+                    isValidSponsorship(incoming()) &&
+                    incoming().userId == existing().userId &&
+                    incoming().status == 'pending' &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'tag', 'cta', 'image', 'url', 'cityId', 'updatedAt']) &&
+                    (!('updatedAt' in incoming()) || incoming().updatedAt == request.time))
+                    || isAdmin();
+      allow delete: if (isSignedIn() && existing().userId == request.auth.uid && existing().status == 'pending')
+                    || isAdmin();
     }
 
     match /test/connection {
