@@ -273,8 +273,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
           ...finalEvent,
           updatedAt: serverTimestamp()
         };
-        delete updateData.createdAt;
-        await updateDoc(eventRef, updateData);
+        if (eventToEdit.id.startsWith('tm-') || eventToEdit.id.startsWith('live-') || eventToEdit.id.startsWith('seed-')) {
+          updateData.createdAt = eventToEdit.createdAt || serverTimestamp();
+        } else {
+          delete updateData.createdAt;
+        }
+        await setDoc(eventRef, updateData, { merge: true });
         onSave({ ...eventToEdit, ...updateData });
       } else {
         const docRef = await addDoc(collection(db, 'events'), finalEvent);

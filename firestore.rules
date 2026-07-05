@@ -146,11 +146,12 @@ service cloud.firestore {
       // Pillar 8: Secure List Queries
       allow list: if true; 
 
-      allow create: if isVerifiedUser() && isValidId(eventId) &&
+      allow create: if (isVerifiedUser() && isValidId(eventId) &&
                     isValidEvent(incoming()) &&
                     incoming().userId == request.auth.uid &&
                     incoming().userCreated == true &&
-                    incoming().createdAt == request.time;
+                    incoming().createdAt == request.time)
+                    || isAdmin();
       
       allow update: if (isSignedIn() && existing().userId == request.auth.uid &&
                     isValidEvent(incoming()) &&
