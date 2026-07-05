@@ -145,6 +145,7 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
       const rawEvents = JSON.parse(extractJson(response.text || "[]"));
       const processedEvents: EventActivity[] = rawEvents.map((e: any, index: number) => ({
         ...e,
+        category: e.category === 'Music' ? 'Entertainment' : (e.category || 'Entertainment'),
         id: `live-${Date.now()}-${index}-${page}`,
         isLive: true,
         isTrending: index < 2,

@@ -499,7 +499,14 @@ const App: React.FC = () => {
 
     const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const events = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as EventActivity));
+      const events = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          category: data.category === 'Music' ? 'Entertainment' : (data.category || 'Entertainment'),
+          id: doc.id
+        } as EventActivity;
+      });
       setDbEvents(events);
     }, (error) => {
       // Don't throw in onSnapshot to avoid crashing the SDK internal state

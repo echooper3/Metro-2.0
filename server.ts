@@ -56,7 +56,13 @@ async function startServer() {
       url.searchParams.append("apikey", apiKey);
       if (city) url.searchParams.append("city", city as string);
       if (keyword) url.searchParams.append("keyword", keyword as string);
-      if (classificationName) url.searchParams.append("classificationName", classificationName as string);
+      if (classificationName) {
+        if (classificationName === 'Entertainment') {
+          url.searchParams.append("classificationName", "Entertainment,Music");
+        } else {
+          url.searchParams.append("classificationName", classificationName as string);
+        }
+      }
       url.searchParams.append("size", "20");
       url.searchParams.append("sort", "date,asc");
 
@@ -64,13 +70,16 @@ async function startServer() {
       const data = await response.json();
       
       // Transform Ticketmaster data to our EventActivity format
-      const events = (data._embedded?.events || []).map((e: any) => ({
-        id: `tm-${e.id}`,
-        title: e.name,
-        category: e.classifications?.[0]?.segment?.name || "Entertainment",
-        description: e.info || e.pleaseNote || `Live event at ${e._embedded?.venues?.[0]?.name}`,
-        date: e.dates?.start?.localDate ? new Date(e.dates.start.localDate).toLocaleDateString('en-US') : undefined,
-        time: formatTo12Hour(e.dates?.start?.localTime),
+      const events = (data._embedded?.events || []).map((e: any) => {
+        const tmCat = e.classifications?.[0]?.segment?.name || "Entertainment";
+        const category = tmCat === "Music" ? "Entertainment" : tmCat;
+        return {
+          id: `tm-${e.id}`,
+          title: e.name,
+          category,
+          description: e.info || e.pleaseNote || `Live event at ${e._embedded?.venues?.[0]?.name}`,
+          date: e.dates?.start?.localDate ? new Date(e.dates.start.localDate).toLocaleDateString('en-US') : undefined,
+          time: formatTo12Hour(e.dates?.start?.localTime),
         venue: e._embedded?.venues?.[0]?.name,
         location: e._embedded?.venues?.[0]?.address?.line1,
         cityName: e._embedded?.venues?.[0]?.city?.name,
@@ -79,6 +88,7 @@ async function startServer() {
         price: e.priceRanges ? `${e.priceRanges[0].min} - ${e.priceRanges[0].max} ${e.priceRanges[0].currency}` : undefined,
         isLive: true,
         isVerified: true
+      };
       }));
 
       res.json({ events });
