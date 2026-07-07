@@ -39,7 +39,7 @@ const CityCard: React.FC<CityCardProps> = ({ city, onClick }) => {
         
         <div className="flex items-center justify-between">
           <div className="flex items-center text-xs font-black uppercase tracking-widest text-orange-500">
-            Explore Metro
+            Select Metro
             <ArrowRight className="w-4 h-4 ml-2 transform group-hover:translate-x-2 transition-transform" />
           </div>
           <div className="w-12 h-12 bg-white/10 backdrop-blur-md border border-white/20 rounded-full flex items-center justify-center group-hover:bg-orange-600 group-hover:border-orange-600 transition-all duration-500">
