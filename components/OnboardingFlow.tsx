@@ -347,7 +347,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
             }`}
           >
             <span className="text-xs font-black uppercase tracking-widest">
-              {step === totalSteps ? (user ? 'Enter The Metro' : 'Sign Up to Enter') : 'Next Protocol'}
+              {step === totalSteps ? (user ? 'Enter The Metro' : 'Sign Up to Enter') : 'Next'}
             </span>
             <ArrowRight className="w-5 h-5" />
           </motion.button>
