@@ -525,7 +525,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    {user.preferences.favoriteCity || 'No Primary Hub'}
+                    {user.preferences.favoriteCity || 'No Primary City'}
                   </div>
                 </div>
               </>

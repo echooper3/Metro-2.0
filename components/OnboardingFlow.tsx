@@ -163,7 +163,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                   <div className="w-10 h-10 bg-black text-white rounded-xl flex items-center justify-center">
                     <MapPin className="w-5 h-5" />
                   </div>
-                  <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Select Primary Hub</h2>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Select Primary City</h2>
                 </div>
                 <div className="grid grid-cols-2 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                   {CITIES.map((city) => (
@@ -307,7 +307,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                 <div className="max-w-xs mx-auto p-6 bg-gray-50 rounded-[2rem] border border-gray-100 text-left">
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-black uppercase text-gray-400">Primary Hub</span>
+                      <span className="text-[9px] font-black uppercase text-gray-400">Primary City</span>
                       <span className="text-[9px] font-black uppercase text-black">{selectedCity || 'None'}</span>
                     </div>
                     <div className="flex justify-between items-center">
