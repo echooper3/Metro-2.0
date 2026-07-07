@@ -732,14 +732,6 @@ const App: React.FC = () => {
                     Select A City
                     <ArrowRight className="w-4 h-4 ml-3" />
                   </motion.button>
-                  <motion.button 
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleGlobalSearch('Trending')}
-                    className="inline-flex items-center px-10 py-5 bg-white border-2 border-gray-100 text-gray-900 font-black rounded-2xl hover:border-black transition-all uppercase tracking-widest text-[10px]"
-                  >
-                    View Trending
-                  </motion.button>
                 </div>
               </motion.div>
               
