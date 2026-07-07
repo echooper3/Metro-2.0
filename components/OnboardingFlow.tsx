@@ -298,9 +298,9 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                   <Sparkles className="w-10 h-10" />
                 </div>
                 <div className="space-y-4">
-                  <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900">Signal Lock.</h2>
+                  <h2 className="text-4xl font-black uppercase tracking-tighter text-gray-900">Signal Locked</h2>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest max-w-xs mx-auto leading-relaxed">
-                    Personalized hub synchronization protocol initialized. You are now connected to the metropolitan pulse.
+                    You're now connected to your city's pulse.
                   </p>
                 </div>
                 
