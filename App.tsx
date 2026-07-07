@@ -718,7 +718,7 @@ const App: React.FC = () => {
                   Inside <br/><span className="text-orange-600">The Metro</span>
                 </h2>
                 <p className="text-gray-500 font-medium text-xl mb-12 max-w-lg leading-relaxed text-balance">
-                  Explore the best events, entertainment, sports, outdoor adventures, art, and hidden gems happening around you- all in one place.
+                  Your city's best events, entertainment, sports, outdoor spots, art, and hidden gems - all in one feed
                 </p>
                 <div className="flex flex-wrap gap-4">
                   <motion.button 
