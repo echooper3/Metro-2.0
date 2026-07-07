@@ -210,7 +210,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                   <div className="w-10 h-10 bg-black text-white rounded-xl flex items-center justify-center">
                     <Heart className="w-5 h-5" />
                   </div>
-                  <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Signaling Interests</h2>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-gray-900">Interests</h2>
                 </div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Select categories to personalize your metropolitan feed.</p>
                 <div className="flex flex-wrap gap-2">
