@@ -71,7 +71,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
               <h1 className="text-2xl font-black tracking-tighter text-gray-900 uppercase italic">
                 Inside <span className="text-orange-600">The Metro</span>
               </h1>
-              <span className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-400">Regional Intelligence</span>
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">Everything Happening Near You</span>
             </div>
           </motion.div>
 
