@@ -117,7 +117,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ user, onComplete, onClo
                     Welcome to Inside <span className="text-orange-500">The Metro.</span>
                   </h1>
                   <p className="text-sm font-bold text-gray-500 uppercase tracking-widest max-w-md">
-                    Synchronizing live metropolitan signals from the world's most vibrant hubs.
+                    A local discovery platform that helps you explore what's happening inside your city.
                   </p>
                   
                   {onSignInClick && !user && (
