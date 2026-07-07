@@ -177,7 +177,7 @@ const Layout: React.FC<LayoutProps> = ({ children, onHome, onAuth, onProfile, on
                 <h2 className="text-white font-black text-4xl tracking-tighter uppercase italic">Inside <span className="text-orange-600">The Metro</span></h2>
               </div>
               <p className="max-w-md leading-relaxed text-white/50 font-medium text-lg mb-12">
-                The definitive guide to the metropolitan heartbeat. Sourcing professional sports, underground culture, and local legends across the South-Central region.
+                The metro heartbeat. Professional sports, underground culture, and the local legends that define your city.
               </p>
               <div className="flex items-center space-x-6">
                  <div className="flex flex-col">
