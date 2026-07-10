@@ -56,6 +56,7 @@ export interface FetchOptions {
   forceRefresh?: boolean;
   excludeTitles?: string[];
   fastSync?: boolean; 
+  adminSync?: boolean;
 }
 
 export const getCacheKey = (cityName: string | 'All', options: FetchOptions = {}) => {
@@ -217,6 +218,9 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
 
     // 1. Gemini / AI events fetch
     const geminiPromise = (async () => {
+      if (!options.adminSync) {
+        return { events: [], sources: [] };
+      }
       try {
         let result = await queryGemini(cityName, options, useGrounding, signal);
         

@@ -425,7 +425,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
       for (let i = 0; i < CITIES.length; i++) {
         const city = CITIES[i];
         setSyncStatus(`Syncing ${city.name} (${i+1}/${CITIES.length})...`);
-        const result = await fetchEvents(city.name, { forceRefresh: true });
+        const result = await fetchEvents(city.name, { forceRefresh: true, adminSync: true });
         if (result && result.events.length > 0) {
           for (const event of result.events) {
             const eventRef = doc(collection(db, 'events'));

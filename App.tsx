@@ -1229,7 +1229,7 @@ const App: React.FC = () => {
                         {detailedEvent.price}
                       </div>
                     )}
-                    {isAdmin && (detailedEvent.userCreated || (detailedEvent.id && !detailedEvent.id.startsWith('live-') && !detailedEvent.id.startsWith('seed-'))) && (
+                    {isAdmin && (detailedEvent.id && !detailedEvent.id.startsWith('live-') && !detailedEvent.id.startsWith('tm-') && !detailedEvent.id.startsWith('eb-')) && (
                       <>
                         <motion.button 
                           whileHover={{ scale: 1.05 }}
