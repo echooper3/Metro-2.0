@@ -61,6 +61,7 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
   const getSourceInfo = (event: EventActivity) => {
     if (event.userCreated) return { label: 'User Submitted', color: 'bg-emerald-600 text-white' };
     if (event.id.startsWith('tm-')) return { label: 'Ticketmaster', color: 'bg-blue-600 text-white' };
+    if (event.id.startsWith('eb-')) return { label: 'Eventbrite', color: 'bg-orange-600 text-white' };
     if (event.id.startsWith('live-')) return { label: 'Gemini AI', color: 'bg-purple-600 text-white' };
     return { label: 'Metropolitan Base', color: 'bg-gray-900 text-white' };
   };
