@@ -1206,7 +1206,7 @@ const App: React.FC = () => {
                         rel="noopener noreferrer" 
                         className="inline-flex items-center px-10 py-5 bg-black text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]"
                       >
-                        {detailedEvent.id && (detailedEvent.id.startsWith('tm-') || detailedEvent.id.startsWith('eb-')) ? 'Get Tickets' : 'Official Listing'}
+                        Get Tickets
                         <ArrowRight className="w-4 h-4 ml-3" />
                       </motion.a>
                     )}
