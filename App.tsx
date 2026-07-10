@@ -156,7 +156,7 @@ const App: React.FC = () => {
           setShowOnboarding(false);
         }
       } else {
-        setShowOnboarding(true);
+        setShowOnboarding(false);
       }
     }
   }, [isAuthReady, user]);
@@ -672,7 +672,13 @@ const App: React.FC = () => {
       onAuth={() => setShowAuthModal(true)} 
       onProfile={handleProfile}
       onAdmin={handleAdmin}
-      onPostEvent={() => setShowCreateModal(true)}
+      onPostEvent={() => {
+        if (!user) {
+          setShowAuthModal(true);
+        } else {
+          setShowCreateModal(true);
+        }
+      }}
       onCitySelect={handleCitySelectByName}
       isLoggedIn={!!user}
       isAdmin={isAdmin}
