@@ -99,6 +99,15 @@ async function startServer() {
   });
 
   // Eventbrite Proxy
+  const normalizeCity = (name: string): string => {
+    const n = name.toLowerCase().trim();
+    if (n === 'okc' || n.includes('oklahoma')) return 'okc';
+    if (n.includes('dallas')) return 'dallas';
+    if (n.includes('houston')) return 'houston';
+    if (n.includes('tulsa')) return 'tulsa';
+    return n;
+  };
+
   app.get("/api/eventbrite", async (req: any, res: any) => {
     const apiKey = process.env.EVENTBRITE_API_KEY;
     const orgId = process.env.EVENTBRITE_ORGANIZATION_ID;
@@ -130,7 +139,7 @@ async function startServer() {
       // Filter events by city, keyword, or category locally since search is deprecated
       const filtered = rawEvents.filter((e: any) => {
         const eventCity = e.venue?.address?.city || "";
-        if (city && city !== "All" && eventCity.toLowerCase() !== (city as string).toLowerCase()) {
+        if (city && city !== "All" && normalizeCity(eventCity) !== normalizeCity(city as string)) {
           return false;
         }
 

@@ -12,6 +12,15 @@ export const handler: Handler = async (event) => {
 
   const { city, keyword, category } = event.queryStringParameters || {};
 
+  const normalizeCity = (name: string): string => {
+    const n = name.toLowerCase().trim();
+    if (n === 'okc' || n.includes('oklahoma')) return 'okc';
+    if (n.includes('dallas')) return 'dallas';
+    if (n.includes('houston')) return 'houston';
+    if (n.includes('tulsa')) return 'tulsa';
+    return n;
+  };
+
   try {
     const url = new URL(`https://www.eventbriteapi.com/v3/organizations/${orgId}/events/`);
     url.searchParams.append("expand", "venue");
@@ -35,7 +44,7 @@ export const handler: Handler = async (event) => {
     const filtered = rawEvents.filter((e: any) => {
       // City check
       const eventCity = e.venue?.address?.city || "";
-      if (city && city !== "All" && eventCity.toLowerCase() !== city.toLowerCase()) {
+      if (city && city !== "All" && normalizeCity(eventCity) !== normalizeCity(city)) {
         return false;
       }
 
