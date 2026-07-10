@@ -1089,7 +1089,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
                     <div>
                       <label className="block text-[8px] font-black uppercase tracking-widest text-gray-400 mb-2">Cover Image *</label>
                       <div 
-                        type="button"
                         onClick={() => !newAdImage && !isCompressing && fileInputRef.current?.click()}
                         className={`relative h-40 w-full rounded-[2rem] border-2 border-dashed transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${newAdImage ? 'border-transparent' : 'border-gray-200 hover:border-black hover:bg-gray-50'}`}
                       >

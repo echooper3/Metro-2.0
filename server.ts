@@ -89,7 +89,7 @@ async function startServer() {
         isLive: true,
         isVerified: true
       };
-      }));
+      });
 
       res.json({ events });
     } catch (error) {
