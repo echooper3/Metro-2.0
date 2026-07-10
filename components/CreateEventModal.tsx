@@ -259,6 +259,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
         imageUrls: imagePreviews,
         videoUrl: videoPreview || null,
         youtubeUrl: youtubeInput ? parseYoutubeUrl(youtubeInput) : null,
+        sourceUrl: eventToEdit?.sourceUrl || null,
         createdAt: eventToEdit?.createdAt || serverTimestamp(),
         orgId: postAsOrg && userOrg ? userOrg.id : (eventToEdit?.orgId || null),
         organizerName: postAsOrg && userOrg ? userOrg.name : (eventToEdit?.organizerName || null),
