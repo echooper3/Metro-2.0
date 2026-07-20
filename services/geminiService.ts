@@ -82,7 +82,7 @@ async function queryGemini(cityName: string, options: FetchOptions, useGrounding
   // Streamlined prompt to reduce token count and speed up generation
   let context = `Today: ${currentDateStr}. Location: ${cityName === 'All' ? 'Tulsa, OKC, Dallas, Houston' : cityName}. List at least 12 REAL future events.
   CRITICAL: The "cityName" field MUST be exactly one of: "Tulsa", "Oklahoma City", "Dallas", or "Houston".
-  Make sure to search for and include real upcoming listings from: ticketstorm.com, tulsago.com, and eventbrite.com.`;
+  Make sure to search for and include real upcoming listings from: ticketstorm.com, tulsago.com, eventbrite.com, hardrockcasinotulsa.com, and etix.com.`;
   if (category && category !== 'All') context += ` Cat: ${category}.`;
   if (keyword) context += ` Search: ${keyword}.`;
   if (page > 1) context += ` This is page ${page} of results. Provide completely different events from typical top results.`;
