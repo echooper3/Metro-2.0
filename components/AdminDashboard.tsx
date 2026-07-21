@@ -10,7 +10,7 @@ import {
   collection, onSnapshot, query, orderBy, doc, getDoc, setDoc, 
   serverTimestamp, updateDoc, increment, writeBatch, deleteDoc 
 } from 'firebase/firestore';
-import { UserProfile, SponsorshipSubmission } from '../types';
+import { UserProfile, SponsorshipSubmission, EventActivity } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { CITIES } from '../constants';
 import { fetchEvents } from '../services/geminiService';
@@ -54,10 +54,75 @@ const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Pro
 
 interface AdminDashboardProps {
   user: UserProfile;
+  dbEvents: EventActivity[];
   onUpdateSyncStats: (lastSyncAt: string, totalSyncs: number) => void;
 }
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats }) => {
+const CategorizationCard: React.FC<{ event: EventActivity }> = ({ event }) => {
+  const [selectedCat, setSelectedCat] = useState<string>('Entertainment');
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveCategory = async () => {
+    setSaving(true);
+    try {
+      const eventRef = doc(db, 'events', event.id);
+      await updateDoc(eventRef, { category: selectedCat });
+    } catch (err) {
+      console.error("Failed to update event category:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+
+  return (
+    <div className="p-6 bg-gray-55 rounded-[2rem] border border-gray-100 flex flex-col justify-between space-y-4">
+      <div className="space-y-3 text-left">
+        <div className="flex justify-between items-start gap-4">
+          <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight line-clamp-2">
+            {event.title}
+          </h4>
+          <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+            {event.cityName || 'Tulsa'}
+          </span>
+        </div>
+        
+        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+          Date: {event.date || 'TBD'} | Time: {event.time || 'TBD'}
+        </p>
+        <p className="text-xs text-gray-500 line-clamp-3 leading-relaxed">
+          {event.description}
+        </p>
+      </div>
+      
+      <div className="space-y-3 pt-3 border-t border-gray-200/50">
+        <div>
+          <label className="text-[8px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Assign Category</label>
+          <select 
+            value={selectedCat}
+            onChange={(e) => setSelectedCat(e.target.value)}
+            className="w-full bg-white border border-gray-200 rounded-xl py-3 px-4 text-[10px] font-black uppercase tracking-widest focus:outline-none focus:border-black transition-colors"
+          >
+            {VALID_CATEGORIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        
+        <button
+          onClick={handleSaveCategory}
+          disabled={saving}
+          className="w-full py-3.5 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[9px] uppercase tracking-widest transition-all cursor-pointer shadow-md disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save Category"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdateSyncStats }) => {
   const [stats, setStats] = useState<any>(null);
   const [userCount, setUserCount] = useState(0);
   const [eventCount, setEventCount] = useState(0);
@@ -71,7 +136,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'analytics' | 'ads' | 'inbox'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'ads' | 'inbox' | 'categorization'>('analytics');
 
   // Inbox states
   const [submissions, setSubmissions] = useState<SponsorshipSubmission[]>([]);
@@ -600,13 +665,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
               </div>
               <span className="text-orange-600 font-black uppercase tracking-[0.4em] text-[10px]">Metropolitan Intelligence</span>
             </div>
-            <h1 className="text-6xl md:text-8xl font-black text-gray-900 tracking-tighter uppercase italic leading-[0.85]">
+            <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tight italic">
               {activeTab === 'analytics' ? (
-                <>Traffic <span className="text-orange-600">Analytics</span></>
+                <>Metro <span className="text-orange-600">Analytics</span></>
               ) : activeTab === 'ads' ? (
-                <>Sponsorship <span className="text-orange-600">Signals</span></>
-              ) : (
+                <>Sponsorship <span className="text-orange-600">Manager</span></>
+              ) : activeTab === 'inbox' ? (
                 <>Partner <span className="text-orange-600">Inbox</span></>
+              ) : (
+                <>Categorization <span className="text-orange-600">Queue</span></>
               )}
             </h1>
           </div>
@@ -644,6 +711,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
             >
               <Inbox className="w-4 h-4" />
               Inbox
+            </button>
+            <button
+              onClick={() => setActiveTab('categorization')}
+              className={`flex items-center gap-2 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'categorization' 
+                  ? 'bg-black text-white shadow-xl shadow-black/10' 
+                  : 'text-gray-400 hover:text-black'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Categorization
             </button>
           </div>
         </div>
@@ -1265,7 +1343,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
 
               </div>
             </motion.div>
-          ) : (
+          ) : activeTab === 'inbox' ? (
             <motion.div
               key="inbox-tab"
               initial={{ opacity: 0, y: 15 }}
@@ -1349,6 +1427,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
                           </button>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="categorization-tab"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-8 animate-fade-in"
+            >
+              <div className="bg-white rounded-[2.5rem] p-10 border border-gray-100">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-6 mb-8">
+                  <div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">
+                      Categorization Queue ({dbEvents.filter(e => e.category === 'Undefined').length})
+                    </h3>
+                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">
+                      Assign proper categories to undefined or crawl-synced events
+                    </p>
+                  </div>
+                </div>
+
+                {dbEvents.filter(e => e.category === 'Undefined').length === 0 ? (
+                  <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                    <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-4" />
+                    <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Queue is Clear</h4>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
+                      All events in the database have a proper category
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {dbEvents.filter(e => e.category === 'Undefined').map((event) => (
+                      <CategorizationCard key={event.id} event={event} />
                     ))}
                   </div>
                 )}
