@@ -65,7 +65,7 @@ const App: React.FC = () => {
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   const [userOrg, setUserOrg] = useState<Organization | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
-  const isAdmin = !!user && (user.role === 'admin' || user.email?.toLowerCase() === 'admin@inside-the-metro.com' || user.email?.toLowerCase() === 'donva.adkism@gmail.com');
+  const isAdmin = (!!user && user.role === 'admin') || (!!auth.currentUser?.email && (auth.currentUser.email.toLowerCase() === 'admin@inside-the-metro.com' || auth.currentUser.email.toLowerCase() === 'donva.adkism@gmail.com'));
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
