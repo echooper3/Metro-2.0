@@ -29,6 +29,33 @@ const SEARCH_MESSAGES = [
   "Validating Regional Activity Data..."
 ];
 
+const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+
+const getCanonicalCategory = (rawCategory?: string): Category => {
+  if (!rawCategory) return 'Undefined';
+  const trimmed = rawCategory.trim();
+  
+  // Find case-insensitive match
+  const match = VALID_CATEGORIES.find(
+    cat => cat.toLowerCase() === trimmed.toLowerCase()
+  ) as Category | undefined;
+  if (match) return match;
+  
+  // Custom normalization mappings
+  const clean = trimmed.toLowerCase();
+  if (clean.includes('sport')) return 'Sports';
+  if (clean.includes('family') || clean.includes('child') || clean.includes('kid')) return 'Family Activities';
+  if (clean.includes('nightlife') || clean.includes('night life') || clean.includes('club') || clean.includes('bar')) return 'Night Life';
+  if (clean.includes('food') || clean.includes('drink') || clean.includes('culinary') || clean.includes('dine') || clean.includes('restaurant') || clean.includes('beer') || clean.includes('wine')) return 'Food & Drink';
+  if (clean.includes('art') || clean.includes('culture') || clean.includes('theatre') || clean.includes('museum') || clean.includes('exhibit')) return 'Arts & Culture';
+  if (clean.includes('outdoor') || clean.includes('park') || clean.includes('nature') || clean.includes('garden')) return 'Outdoors';
+  if (clean.includes('community') || clean.includes('library') || clean.includes('social') || clean.includes('class') || clean.includes('workshop')) return 'Community';
+  if (clean.includes('attraction') || clean.includes('tour') || clean.includes('landmark') || clean.includes('zoo')) return 'Visitor Attractions';
+  if (clean.includes('entertainment') || clean.includes('comedy') || clean.includes('music') || clean.includes('concert') || clean.includes('show') || clean.includes('performance') || clean.includes('movie') || clean.includes('film')) return 'Entertainment';
+  
+  return 'Undefined';
+};
+
 const App: React.FC = () => {
   const [view, setView] = useState<AppView>(AppView.LANDING);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
@@ -516,11 +543,22 @@ const App: React.FC = () => {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const events = snapshot.docs.map(doc => {
         const data = doc.data();
-        return {
+        const rawCat = data.category;
+        const canonicalCat = getCanonicalCategory(rawCat);
+        
+        const mappedEvent = {
           ...data,
-          category: data.category === 'Music' ? 'Entertainment' : (data.category || 'Entertainment'),
+          category: canonicalCat,
           id: doc.id
         } as EventActivity;
+        
+        // If the event does not have a proper category, client-side route its userId to the admin's UID
+        // so it appears in their "My Submissions" tab for editing and correction.
+        if (canonicalCat === 'Undefined' && isAdmin && user) {
+          mappedEvent.userId = user.id;
+        }
+        
+        return mappedEvent;
       });
       setDbEvents(events);
     }, (error) => {
@@ -528,7 +566,7 @@ const App: React.FC = () => {
       console.error('Firestore onSnapshot Error [events]:', error);
     });
     return () => unsubscribe();
-  }, [isAuthReady]);
+  }, [isAuthReady, user, isAdmin]);
 
   // Firestore Organization Sync
   useEffect(() => {

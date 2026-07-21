@@ -111,7 +111,8 @@ export type Category =
   | 'Night Life' 
   | 'Arts & Culture' 
   | 'Outdoors' 
-  | 'Community';
+  | 'Community'
+  | 'Undefined';
 
 export interface SponsorshipSubmission {
   id: string;
