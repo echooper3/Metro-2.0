@@ -480,6 +480,9 @@ const App: React.FC = () => {
           setUser(fallbackUserData);
         }
 
+        const adminStatus = (firebaseUser.email?.toLowerCase() === 'admin@inside-the-metro.com' || firebaseUser.email?.toLowerCase() === 'donva.adkism@gmail.com') ? 'Yes' : 'No';
+        addToast(`Session: ${firebaseUser.email} | Admin: ${adminStatus}`);
+
         // Set up real-time listener for user document
         unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
           if (snapshot.exists()) {
