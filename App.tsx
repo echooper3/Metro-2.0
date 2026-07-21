@@ -65,7 +65,7 @@ const App: React.FC = () => {
   const [dbEvents, setDbEvents] = useState<EventActivity[]>([]);
   const [userOrg, setUserOrg] = useState<Organization | null>(null);
   const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean | null>(null);
-  const isAdmin = !!user && (user.role === 'admin' || user.email === 'admin@inside-the-metro.com' || user.email === 'donva.adkism@gmail.com');
+  const isAdmin = !!user && (user.role === 'admin' || user.email?.toLowerCase() === 'admin@inside-the-metro.com' || user.email?.toLowerCase() === 'donva.adkism@gmail.com');
   
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -465,7 +465,19 @@ const App: React.FC = () => {
             setUser(userData);
           }
         } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
+          console.error("Firestore user fetch failed, using Auth fallback:", error);
+          const fallbackUserData: UserProfile = {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Metropolitan Member',
+            email: firebaseUser.email || '',
+            avatar: firebaseUser.photoURL || undefined,
+            phone: '',
+            birthday: '',
+            zipCode: '',
+            savedEvents: [],
+            preferences: { favoriteCategories: [], hasCompletedOnboarding: true }
+          };
+          setUser(fallbackUserData);
         }
 
         // Set up real-time listener for user document
