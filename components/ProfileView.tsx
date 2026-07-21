@@ -126,6 +126,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [newSponCityId, setNewSponCityId] = useState('general');
   const [isCompressingSpon, setIsCompressingSpon] = useState(false);
   const [isSubmittingSpon, setIsSubmittingSpon] = useState(false);
+  const [sponsorshipToEdit, setSponsorshipToEdit] = useState<SponsorshipSubmission | null>(null);
   const sponFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSponImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,30 +143,69 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     }
   };
 
+  const handleStartEditSponsorship = (sub: SponsorshipSubmission) => {
+    setSponsorshipToEdit(sub);
+    setNewSponTitle(sub.title);
+    setNewSponTag(sub.tag || 'Sponsorship');
+    setNewSponDescription(sub.description);
+    setNewSponCta(sub.cta);
+    setNewSponImage(sub.image);
+    setNewSponUrl(sub.url);
+    setNewSponCityId(sub.cityId);
+  };
+
+  const handleCancelEditSponsorship = () => {
+    setSponsorshipToEdit(null);
+    setNewSponTitle('');
+    setNewSponTag('Sponsorship');
+    setNewSponDescription('');
+    setNewSponCta('');
+    setNewSponImage('');
+    setNewSponUrl('');
+    setNewSponCityId('general');
+    if (sponFileInputRef.current) sponFileInputRef.current.value = '';
+  };
+
   const handleSubmitSponsorship = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSponTitle || !newSponCta || !newSponImage || isSubmittingSpon || isCompressingSpon) return;
     setIsSubmittingSpon(true);
     
     try {
-      const sponRef = doc(collection(db, 'sponsorships'));
-      const newSubmission: SponsorshipSubmission = {
-        id: sponRef.id,
-        userId: user.id,
-        userEmail: user.email,
-        userName: user.name,
-        title: newSponTitle,
-        tag: newSponTag || 'Sponsorship',
-        description: newSponDescription,
-        cta: newSponCta,
-        image: newSponImage,
-        url: newSponUrl,
-        cityId: newSponCityId,
-        status: 'pending',
-        createdAt: serverTimestamp()
-      };
-      
-      await setDoc(sponRef, newSubmission);
+      if (sponsorshipToEdit) {
+        const sponRef = doc(db, 'sponsorships', sponsorshipToEdit.id);
+        await updateDoc(sponRef, {
+          title: newSponTitle,
+          tag: newSponTag || 'Sponsorship',
+          description: newSponDescription,
+          cta: newSponCta,
+          image: newSponImage,
+          url: newSponUrl,
+          cityId: newSponCityId,
+          updatedAt: serverTimestamp()
+        });
+        alert("Sponsorship updated successfully!");
+        setSponsorshipToEdit(null);
+      } else {
+        const sponRef = doc(collection(db, 'sponsorships'));
+        const newSubmission: SponsorshipSubmission = {
+          id: sponRef.id,
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.name,
+          title: newSponTitle,
+          tag: newSponTag || 'Sponsorship',
+          description: newSponDescription,
+          cta: newSponCta,
+          image: newSponImage,
+          url: newSponUrl,
+          cityId: newSponCityId,
+          status: 'pending',
+          createdAt: serverTimestamp()
+        };
+        await setDoc(sponRef, newSubmission);
+        alert("Sponsorship inquiry submitted successfully! Our administrators will review it shortly.");
+      }
       
       // Reset Form
       setNewSponTitle('');
@@ -176,11 +216,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       setNewSponUrl('');
       setNewSponCityId('general');
       if (sponFileInputRef.current) sponFileInputRef.current.value = '';
-      
-      alert("Sponsorship inquiry submitted successfully! Our administrators will review it shortly.");
     } catch (err) {
-      console.error("Failed to submit sponsorship inquiry:", err);
-      alert("Failed to submit sponsorship inquiry. Please try again.");
+      console.error("Failed to save sponsorship:", err);
+      alert("Failed to save sponsorship. Please try again.");
     } finally {
       setIsSubmittingSpon(false);
     }
@@ -1463,6 +1501,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                                 </span>
                               </div>
                             </div>
+                            {sub.status === 'pending' && (
+                              <button 
+                                onClick={() => handleStartEditSponsorship(sub)}
+                                className="mt-4 w-full py-3 bg-gray-100 hover:bg-black hover:text-white text-black font-black rounded-2xl text-[9px] uppercase tracking-widest transition-all cursor-pointer"
+                              >
+                                Edit Campaign
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -1473,7 +1519,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 {/* Right Side: Submission Form */}
                 <div className="lg:col-span-5 bg-gray-50 rounded-[2.5rem] p-8 border border-gray-100">
                   <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-6">
-                    New Sponsorship Request
+                    {sponsorshipToEdit ? "Edit Sponsorship Request" : "New Sponsorship Request"}
                   </h4>
                   
                   <form onSubmit={handleSubmitSponsorship} className="space-y-6">
@@ -1595,8 +1641,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       disabled={isSubmittingSpon || isCompressingSpon}
                       className="w-full py-5 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer"
                     >
-                      {isSubmittingSpon ? "Submitting Inquiry..." : "Submit Inquiry"}
+                      {isSubmittingSpon ? "Saving..." : (sponsorshipToEdit ? "Save Changes" : "Submit Inquiry")}
                     </button>
+                    {sponsorshipToEdit && (
+                      <button 
+                        type="button"
+                        onClick={handleCancelEditSponsorship}
+                        className="mt-2 w-full py-5 border border-gray-200 text-gray-700 hover:border-black font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all cursor-pointer bg-white"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
                   </form>
                 </div>
               </div>
