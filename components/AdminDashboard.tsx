@@ -432,7 +432,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
             await setDoc(eventRef, {
               ...event,
               id: eventRef.id,
-              userId: auth.currentUser?.uid || 'system',
+              userId: user.id,
               userCreated: false,
               createdAt: serverTimestamp()
             });
@@ -551,7 +551,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onUpdateSyncStats
         cityName: capitalizeFirstLetter(item?.cityName || ""),
         imageUrl: item?.imageUrl || "",
         adminCreated: true,
-        userId: auth.currentUser?.uid || "unknown",
+        userId: user.id,
         createdAt: serverTimestamp(),
       }));
 
