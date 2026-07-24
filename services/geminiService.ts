@@ -4,6 +4,30 @@ import { EventActivity, GroundingSource, Category } from "../types";
 const CACHE_KEY_PREFIX = "itm_cache_v15_";
 let globalFetchController: AbortController | null = null;
 
+export const getCanonicalCategory = (rawCategory?: string): Category => {
+  if (!rawCategory) return 'Undefined';
+  const trimmed = rawCategory.trim();
+  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+  
+  const match = VALID_CATEGORIES.find(
+    cat => cat.toLowerCase() === trimmed.toLowerCase()
+  ) as Category | undefined;
+  if (match) return match;
+  
+  const clean = trimmed.toLowerCase();
+  if (clean.includes('sport')) return 'Sports';
+  if (clean.includes('family') || clean.includes('child') || clean.includes('kid')) return 'Family Activities';
+  if (clean.includes('nightlife') || clean.includes('night life') || clean.includes('club') || clean.includes('bar')) return 'Night Life';
+  if (clean.includes('food') || clean.includes('drink') || clean.includes('culinary') || clean.includes('dine') || clean.includes('restaurant') || clean.includes('beer') || clean.includes('wine')) return 'Food & Drink';
+  if (clean.includes('art') || clean.includes('culture') || clean.includes('theatre') || clean.includes('museum') || clean.includes('exhibit')) return 'Arts & Culture';
+  if (clean.includes('outdoor') || clean.includes('park') || clean.includes('nature') || clean.includes('garden')) return 'Outdoors';
+  if (clean.includes('community') || clean.includes('library') || clean.includes('social') || clean.includes('class') || clean.includes('workshop')) return 'Community';
+  if (clean.includes('attraction') || clean.includes('tour') || clean.includes('landmark') || clean.includes('zoo')) return 'Visitor Attractions';
+  if (clean.includes('entertainment') || clean.includes('comedy') || clean.includes('music') || clean.includes('concert') || clean.includes('show') || clean.includes('performance') || clean.includes('movie') || clean.includes('film')) return 'Entertainment';
+  
+  return 'Undefined';
+};
+
 const extractJson = (text: string) => {
   if (!text) return "[]";
   const startIdx = text.indexOf('[');
@@ -293,20 +317,26 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
 
     if (signal.aborted) throw new Error('AbortError');
 
+    // Normalize event category function
+    const normalizeEvent = (e: any) => ({
+      ...e,
+      category: getCanonicalCategory(e.category)
+    });
+
     // Combine and de-duplicate by title (case-insensitive)
-    const combinedEvents = [...(geminiResult.events || [])];
+    const combinedEvents = [...(geminiResult.events || []).map(normalizeEvent)];
     const seenTitles = new Set(combinedEvents.map(e => e.title.toLowerCase()));
 
     for (const e of tmEvents) {
       if (!seenTitles.has(e.title.toLowerCase())) {
-        combinedEvents.push(e);
+        combinedEvents.push(normalizeEvent(e));
         seenTitles.add(e.title.toLowerCase());
       }
     }
 
     for (const e of ebEvents) {
       if (!seenTitles.has(e.title.toLowerCase())) {
-        combinedEvents.push(e);
+        combinedEvents.push(normalizeEvent(e));
         seenTitles.add(e.title.toLowerCase());
       }
     }

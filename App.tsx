@@ -263,6 +263,9 @@ const App: React.FC = () => {
     });
 
     const filtered = unique.filter(e => {
+      // Hide undefined/uncategorized events from the public feed
+      if (e.category === 'Undefined') return false;
+
       const matchesCategory = activeCategory === 'All' || e.category === activeCategory;
       const matchesCity = !selectedCity || (e.cityName && e.cityName.toLowerCase().includes(selectedCity.name.toLowerCase()));
       const matchesQuery = !searchQuery || 

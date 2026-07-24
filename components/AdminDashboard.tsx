@@ -136,7 +136,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdat
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'analytics' | 'ads' | 'inbox' | 'categorization'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'ads' | 'inbox'>('analytics');
+  const [inboxSubTab, setInboxSubTab] = useState<'sponsorships' | 'uncategorized'>('sponsorships');
 
   // Inbox states
   const [submissions, setSubmissions] = useState<SponsorshipSubmission[]>([]);
@@ -652,6 +653,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdat
     );
   }
 
+  const pendingSponsorshipsCount = submissions.filter(s => s.status === 'pending').length;
+  const uncategorizedCount = dbEvents.filter(e => e.category === 'Undefined').length;
+  const totalInboxCount = pendingSponsorshipsCount + uncategorizedCount;
+
   return (
     <div className="min-h-screen bg-white pt-32 pb-32">
       <div className="max-w-7xl mx-auto px-4">
@@ -670,10 +675,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdat
                 <>Metro <span className="text-orange-600">Analytics</span></>
               ) : activeTab === 'ads' ? (
                 <>Sponsorship <span className="text-orange-600">Manager</span></>
-              ) : activeTab === 'inbox' ? (
-                <>Partner <span className="text-orange-600">Inbox</span></>
               ) : (
-                <>Categorization <span className="text-orange-600">Queue</span></>
+                <>Metro <span className="text-orange-600">Inbox</span></>
               )}
             </h1>
           </div>
@@ -711,17 +714,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdat
             >
               <Inbox className="w-4 h-4" />
               Inbox
-            </button>
-            <button
-              onClick={() => setActiveTab('categorization')}
-              className={`flex items-center gap-2 px-8 py-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                activeTab === 'categorization' 
-                  ? 'bg-black text-white shadow-xl shadow-black/10' 
-                  : 'text-gray-400 hover:text-black'
-              }`}
-            >
-              <LayoutGrid className="w-4 h-4" />
-              Categorization
+              {totalInboxCount > 0 && (
+                <span className="ml-1 px-2 py-0.5 bg-orange-600 text-white rounded-full text-[8px] font-bold">
+                  {totalInboxCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1353,124 +1350,151 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, dbEvents, onUpdat
               className="space-y-8 animate-fade-in"
             >
               <div className="bg-white rounded-[2.5rem] p-10 border border-gray-100">
-                <h3 className="text-xl font-black uppercase tracking-tight mb-8">
-                  Pending Sponsorship Requests ({submissions.filter(s => s.status === 'pending').length})
-                </h3>
-
-                {submissionsLoading ? (
-                  <div className="py-20 text-center">
-                    <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Retrieving partner signals...</p>
-                  </div>
-                ) : submissions.filter(s => s.status === 'pending').length === 0 ? (
-                  <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
-                    <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-4" />
-                    <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Inbox is empty</h4>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">All organizer requests have been processed</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {submissions.filter(s => s.status === 'pending').map((sub) => (
-                      <div key={sub.id} className="p-8 bg-gray-50 rounded-[2rem] border border-gray-100 flex flex-col justify-between space-y-6">
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Submitted by</span>
-                              <h5 className="text-xs font-black text-gray-900 uppercase">{sub.userName || 'Organizer'}</h5>
-                              <p className="text-[9px] text-gray-400 font-bold tracking-widest lowercase mt-0.5">{sub.userEmail}</p>
-                            </div>
-                            <span className="px-4 py-1.5 bg-orange-100 text-orange-600 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
-                              Pending Review
-                            </span>
-                          </div>
-
-                          {sub.image && (
-                            <div className="aspect-[16/9] w-full rounded-2xl overflow-hidden border border-gray-200 bg-white">
-                              <img src={sub.image} alt={sub.title} className="w-full h-full object-cover" />
-                            </div>
-                          )}
-
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center">
-                              <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">{sub.title}</h4>
-                              <span className="text-[9px] font-black text-white bg-black px-3 py-1 rounded-full uppercase tracking-widest">{sub.cityId === 'general' ? 'All Hubs' : sub.cityId}</span>
-                            </div>
-                            <p className="text-[10px] text-gray-550 font-bold uppercase tracking-widest mt-1">{sub.tag || 'Sponsorship'}</p>
-                            <p className="text-xs text-gray-500 leading-relaxed mt-2">{sub.description}</p>
-                          </div>
-
-                          <div className="p-4 bg-white rounded-xl border border-gray-100 space-y-2 text-left">
-                            <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block">Target Action</span>
-                            <div className="flex justify-between items-center gap-4">
-                              <a href={sub.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-black hover:text-orange-600 underline uppercase tracking-widest truncate">
-                                {sub.url}
-                              </a>
-                              <span className="bg-gray-100 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-gray-700 shrink-0">
-                                {sub.cta}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200/50">
-                          <button
-                            onClick={() => handleDeclineSponsorship(sub)}
-                            className="py-4 border-2 border-red-200 hover:border-red-600 hover:bg-red-50 text-red-600 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer"
-                          >
-                            Decline
-                          </button>
-                          <button
-                            onClick={() => handleApproveSponsorship(sub)}
-                            className="py-4 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-black/10"
-                          >
-                            Approve & Publish
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="categorization-tab"
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-8 animate-fade-in"
-            >
-              <div className="bg-white rounded-[2.5rem] p-10 border border-gray-100">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-6 mb-8">
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-tight">
-                      Categorization Queue ({dbEvents.filter(e => e.category === 'Undefined').length})
-                    </h3>
-                    <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">
-                      Assign proper categories to undefined or crawl-synced events
-                    </p>
-                  </div>
+                {/* Inbox Sub-Tabs */}
+                <div className="flex border-b border-gray-100 pb-6 mb-8 gap-8">
+                  <button
+                    onClick={() => setInboxSubTab('sponsorships')}
+                    className={`pb-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+                      inboxSubTab === 'sponsorships'
+                        ? 'border-black text-black'
+                        : 'border-transparent text-gray-400 hover:text-black'
+                    }`}
+                  >
+                    Sponsorship Requests
+                    {pendingSponsorshipsCount > 0 && (
+                      <span className="px-2 py-0.5 bg-orange-100 text-orange-605 rounded-full text-[8px] font-bold">
+                        {pendingSponsorshipsCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setInboxSubTab('uncategorized')}
+                    className={`pb-4 text-xs font-black uppercase tracking-widest border-b-2 transition-all flex items-center gap-2 ${
+                      inboxSubTab === 'uncategorized'
+                        ? 'border-black text-black'
+                        : 'border-transparent text-gray-400 hover:text-black'
+                    }`}
+                  >
+                    Uncategorized Events
+                    {uncategorizedCount > 0 && (
+                      <span className="px-2 py-0.5 bg-orange-100 text-orange-605 rounded-full text-[8px] font-bold">
+                        {uncategorizedCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
 
-                {dbEvents.filter(e => e.category === 'Undefined').length === 0 ? (
-                  <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
-                    <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-4" />
-                    <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Queue is Clear</h4>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-                      All events in the database have a proper category
-                    </p>
-                  </div>
+                {inboxSubTab === 'sponsorships' ? (
+                  <>
+                    <h3 className="text-xl font-black uppercase tracking-tight mb-8">
+                      Pending Sponsorship Requests ({pendingSponsorshipsCount})
+                    </h3>
+
+                    {submissionsLoading ? (
+                      <div className="py-20 text-center">
+                        <div className="w-10 h-10 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                        <p className="text-xs font-black text-gray-400 uppercase tracking-widest">Retrieving partner signals...</p>
+                      </div>
+                    ) : pendingSponsorshipsCount === 0 ? (
+                      <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                        <Inbox className="w-10 h-10 text-gray-300 mx-auto mb-4" />
+                        <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Inbox is empty</h4>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">All organizer requests have been processed</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {submissions.filter(s => s.status === 'pending').map((sub) => (
+                          <div key={sub.id} className="p-8 bg-gray-50 rounded-[2rem] border border-gray-100 flex flex-col justify-between space-y-6">
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 block mb-1">Submitted by</span>
+                                  <h5 className="text-xs font-black text-gray-900 uppercase">{sub.userName || 'Organizer'}</h5>
+                                  <p className="text-[9px] text-gray-400 font-bold tracking-widest lowercase mt-0.5">{sub.userEmail}</p>
+                                </div>
+                                <span className="px-4 py-1.5 bg-orange-100 text-orange-600 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+                                  Pending Review
+                                </span>
+                              </div>
+
+                              {sub.image && (
+                                <div className="aspect-[16/9] w-full rounded-2xl overflow-hidden border border-gray-200 bg-white">
+                                  <img src={sub.image} alt={sub.title} className="w-full h-full object-cover" />
+                                </div>
+                              )}
+
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center">
+                                  <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">{sub.title}</h4>
+                                  <span className="text-[9px] font-black text-white bg-black px-3 py-1 rounded-full uppercase tracking-widest">{sub.cityId === 'general' ? 'All Hubs' : sub.cityId}</span>
+                                </div>
+                                <p className="text-[10px] text-gray-550 font-bold uppercase tracking-widest mt-1">{sub.tag || 'Sponsorship'}</p>
+                                <p className="text-xs text-gray-500 leading-relaxed mt-2">{sub.description}</p>
+                              </div>
+
+                              <div className="p-4 bg-white rounded-xl border border-gray-100 space-y-2 text-left">
+                                <span className="text-[8px] font-black uppercase tracking-widest text-gray-400 block">Target Action</span>
+                                <div className="flex justify-between items-center gap-4">
+                                  <a href={sub.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-black hover:text-orange-600 underline uppercase tracking-widest truncate">
+                                    {sub.url}
+                                  </a>
+                                  <span className="bg-gray-100 px-3 py-1 rounded-lg text-[9px] font-black uppercase text-gray-700 shrink-0">
+                                    {sub.cta}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200/50">
+                              <button
+                                onClick={() => handleDeclineSponsorship(sub)}
+                                className="py-4 border-2 border-red-200 hover:border-red-600 hover:bg-red-50 text-red-600 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer"
+                              >
+                                Decline
+                              </button>
+                              <button
+                                onClick={() => handleApproveSponsorship(sub)}
+                                className="py-4 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-lg shadow-black/10"
+                              >
+                                Approve & Publish
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {dbEvents.filter(e => e.category === 'Undefined').map((event) => (
-                      <CategorizationCard key={event.id} event={event} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="mb-8">
+                      <h3 className="text-xl font-black uppercase tracking-tight">
+                        Categorization Queue ({uncategorizedCount})
+                      </h3>
+                      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">
+                        Assign proper categories to undefined or crawl-synced events
+                      </p>
+                    </div>
+
+                    {uncategorizedCount === 0 ? (
+                      <div className="py-24 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
+                        <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-4" />
+                        <h4 className="text-sm font-black uppercase tracking-widest text-gray-400">Queue is Clear</h4>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1">
+                          All events in the database have a proper category
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {dbEvents.filter(e => e.category === 'Undefined').map((event) => (
+                          <CategorizationCard key={event.id} event={event} />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
 
         {/* Upload Events Dialog */}
