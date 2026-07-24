@@ -900,12 +900,12 @@ const App: React.FC = () => {
             </div>
 
           <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30 sticky top-24">
-            <div className="flex overflow-x-auto scrollbar-hide space-x-3 bg-white/90 backdrop-blur-md p-4 rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
+            <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 bg-white/90 backdrop-blur-md p-3 md:p-4 rounded-[2rem] md:rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
               {CATEGORIES.map(cat => (
                 <button 
                   key={cat} 
                   onClick={() => handleCategoryClick(cat)} 
-                  className={`px-8 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-black text-white shadow-2xl shadow-black/20' : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-black'}`}
+                  className={`px-4 py-3 md:px-8 md:py-5 rounded-[1.5rem] md:rounded-[2rem] text-[9px] md:text-[10px] font-black uppercase tracking-[0.1em] md:tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-black text-white shadow-2xl shadow-black/20' : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-black'}`}
                 >
                   {cat}
                 </button>
