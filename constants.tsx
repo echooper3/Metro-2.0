@@ -32,7 +32,7 @@ export const CITIES: City[] = [
 ];
 
 export const CATEGORIES: Category[] = [
-  'All', 'Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'
+  'All', 'Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Arts & Culture', 'Outdoors', 'Community'
 ];
 
 const getRelDate = (daysOut: number) => {
@@ -43,11 +43,11 @@ const getRelDate = (daysOut: number) => {
 
 const generateCitySeeds = (city: string): EventActivity[] => {
   const events: EventActivity[] = [];
-  const categories: Category[] = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+  const categories: Category[] = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Arts & Culture', 'Outdoors', 'Community'];
   
   categories.forEach((cat, idx) => {
-    // Skip Tulsa Sports, Family Activities, Entertainment, Visitor Attractions, Food & Drink, Night Life, Arts & Culture, Outdoors, and Community Showcase series as requested
-    if (city === 'Tulsa' && (cat === 'Sports' || cat === 'Family Activities' || cat === 'Entertainment' || cat === 'Visitor Attractions' || cat === 'Food & Drink' || cat === 'Night Life' || cat === 'Arts & Culture' || cat === 'Outdoors' || cat === 'Community')) return;
+    // Skip Tulsa Sports, Family Activities, Entertainment, Visitor Attractions, Food & Drink, Arts & Culture, Outdoors, and Community Showcase series as requested
+    if (city === 'Tulsa' && (cat === 'Sports' || cat === 'Family Activities' || cat === 'Entertainment' || cat === 'Visitor Attractions' || cat === 'Food & Drink' || cat === 'Arts & Culture' || cat === 'Outdoors' || cat === 'Community')) return;
 
     [0, 2, 7, 30].forEach((days, dIdx) => {
       const daysOffset = days + idx;
@@ -64,7 +64,7 @@ const generateCitySeeds = (city: string): EventActivity[] => {
         price: idx % 3 === 0 ? '$25' : undefined,
         isFree: idx % 3 !== 0,
         isTrending: daysOffset <= 7, 
-        ageRestriction: cat === 'Night Life' ? '21+' : (cat === 'Entertainment' && idx % 2 === 0 ? '18+' : 'All Ages'),
+        ageRestriction: cat === 'Entertainment' && idx % 2 === 0 ? '18+' : 'All Ages',
         organizerName: `${city} ${cat} Association`,
         organizerUrl: `https://www.inside-the-metro.com/hosts/${city.toLowerCase()}`,
         organizerContact: `contact@${city.toLowerCase()}-${cat.toLowerCase().replace(/\s/g, '')}.org`,
@@ -155,7 +155,7 @@ const REAL_SEED_EVENTS: Record<string, EventActivity[]> = {
       id: 'd-2',
       title: 'Deep Ellum Jazz Night',
       cityName: 'Dallas',
-      category: 'Night Life',
+      category: 'Entertainment',
       description: 'A night of soulful jazz and blues in the historic Deep Ellum district.',
       date: getRelDate(3),
       time: '10:00 PM',

@@ -108,7 +108,6 @@ export type Category =
   | 'Entertainment' 
   | 'Visitor Attractions' 
   | 'Food & Drink' 
-  | 'Night Life' 
   | 'Arts & Culture' 
   | 'Outdoors' 
   | 'Community'

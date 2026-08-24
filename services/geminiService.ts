@@ -7,7 +7,7 @@ let globalFetchController: AbortController | null = null;
 export const getCanonicalCategory = (rawCategory?: string): Category => {
   if (!rawCategory) return 'Undefined';
   const trimmed = rawCategory.trim();
-  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Arts & Culture', 'Outdoors', 'Community'];
   
   const match = VALID_CATEGORIES.find(
     cat => cat.toLowerCase() === trimmed.toLowerCase()
@@ -17,7 +17,7 @@ export const getCanonicalCategory = (rawCategory?: string): Category => {
   const clean = trimmed.toLowerCase();
   if (clean.includes('sport')) return 'Sports';
   if (clean.includes('family') || clean.includes('child') || clean.includes('kid')) return 'Family Activities';
-  if (clean.includes('nightlife') || clean.includes('night life') || clean.includes('club') || clean.includes('bar')) return 'Night Life';
+  if (clean.includes('nightlife') || clean.includes('night life') || clean.includes('club') || clean.includes('bar')) return 'Entertainment';
   if (clean.includes('food') || clean.includes('drink') || clean.includes('culinary') || clean.includes('dine') || clean.includes('restaurant') || clean.includes('beer') || clean.includes('wine')) return 'Food & Drink';
   if (clean.includes('art') || clean.includes('culture') || clean.includes('theatre') || clean.includes('museum') || clean.includes('exhibit')) return 'Arts & Culture';
   if (clean.includes('outdoor') || clean.includes('park') || clean.includes('nature') || clean.includes('garden')) return 'Outdoors';

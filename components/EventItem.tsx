@@ -18,7 +18,6 @@ const EventItem: React.FC<EventItemProps> = ({ event, showCity, onOpenDetails, i
     if (c.includes('family')) return 'bg-purple-50 text-purple-600 border-purple-100';
     if (c.includes('entertainment')) return 'bg-pink-50 text-pink-600 border-pink-100';
     if (c.includes('food')) return 'bg-orange-50 text-orange-600 border-orange-100';
-    if (c.includes('night')) return 'bg-indigo-50 text-indigo-600 border-indigo-100';
     if (c.includes('arts')) return 'bg-amber-50 text-amber-600 border-amber-100';
     if (c.includes('outdoor')) return 'bg-emerald-50 text-emerald-600 border-emerald-100';
     return 'bg-gray-50 text-gray-600 border-gray-100';

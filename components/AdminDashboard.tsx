@@ -74,7 +74,7 @@ const CategorizationCard: React.FC<{ event: EventActivity }> = ({ event }) => {
     }
   };
 
-  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Night Life', 'Arts & Culture', 'Outdoors', 'Community'];
+  const VALID_CATEGORIES = ['Sports', 'Family Activities', 'Entertainment', 'Visitor Attractions', 'Food & Drink', 'Arts & Culture', 'Outdoors', 'Community'];
 
   return (
     <div className="p-6 bg-gray-55 rounded-[2rem] border border-gray-100 flex flex-col justify-between space-y-4">
