@@ -330,16 +330,17 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       const cleanSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'org';
       const uniqueOrgId = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
       
+      const effectiveEmail = orgEmail.trim() || user.email || '';
       const newOrg: Organization = {
         id: uniqueOrgId,
         name: orgName.trim(),
         description: orgDesc.trim(),
         ownerId: user.id,
         members: [user.id],
-        logoUrl: orgLogoUrl || `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
+        logoUrl: orgLogoUrl?.trim() || `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
         createdAt: serverTimestamp(),
         ...(orgWebsite?.trim() ? { website: orgWebsite.trim() } : {}),
-        ...(orgEmail?.trim() ? { email: orgEmail.trim() } : {}),
+        ...(effectiveEmail ? { email: effectiveEmail } : {}),
         ...(orgPhone?.trim() ? { phone: orgPhone.trim() } : {})
       };
 
@@ -481,6 +482,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setEditAccountType(user.accountType || (user.isOrganizer ? 'organizer' : 'individual'));
     if (!orgName && user.businessName) {
       setOrgName(user.businessName);
+    }
+    if (!orgEmail && user.email) {
+      setOrgEmail(user.email);
     }
   }, [user.name, user.email, user.phone, user.birthday, user.zipCode, user.accountType, user.isOrganizer, user.businessName]);
 
@@ -1341,7 +1345,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                           required
                           type="email" 
                           placeholder="info@yourcompany.com" 
-                          value={orgEmail || user.email}
+                          value={orgEmail}
                           onChange={(e) => setOrgEmail(e.target.value)}
                           className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
                         />
