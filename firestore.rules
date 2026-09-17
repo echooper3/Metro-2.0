@@ -42,12 +42,10 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.id is string && data.id == request.auth.uid &&
-             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
              data.email is string && data.email.size() <= 256 &&
-             data.savedEvents is list && data.savedEvents.size() <= 100 &&
-             data.preferences is map &&
-             data.preferences.favoriteCategories is list &&
-             (!('hasCompletedOnboarding' in data.preferences) || data.preferences.hasCompletedOnboarding is bool) &&
+             (!('savedEvents' in data) || (data.savedEvents is list && data.savedEvents.size() <= 100)) &&
+             (!('preferences' in data) || (data.preferences is map && (!('favoriteCategories' in data.preferences) || data.preferences.favoriteCategories is list) && (!('hasCompletedOnboarding' in data.preferences) || data.preferences.hasCompletedOnboarding is bool))) &&
              (!('avatar' in data) || data.avatar is string) &&
              (!('phone' in data) || data.phone is string) &&
              (!('birthday' in data) || data.birthday is string) &&

@@ -652,11 +652,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const toggleCategory = (cat: Category) => {
-    const current = user.preferences.favoriteCategories;
+    const current = user.preferences?.favoriteCategories || [];
     const next = current.includes(cat)
       ? current.filter(c => c !== cat)
       : [...current, cat];
-    onUpdatePreferences({ ...user.preferences, favoriteCategories: next });
+    onUpdatePreferences({ ...(user.preferences || { favoriteCategories: [] }), favoriteCategories: next });
   };
 
   return (
@@ -779,7 +779,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    {user.preferences.favoriteCity || 'No Primary City'}
+                    {user.preferences?.favoriteCity || 'No Primary City'}
                   </div>
                 </div>
               </>
@@ -889,8 +889,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               exit={{ opacity: 0, y: -20 }}
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
             >
-              {savedEvents.filter(e => e && typeof e === 'object').length > 0 ? (
-                savedEvents.filter(e => e && typeof e === 'object').map((event, i) => (
+              {(savedEvents || []).filter(e => e && typeof e === 'object').length > 0 ? (
+                (savedEvents || []).filter(e => e && typeof e === 'object').map((event, i) => (
                   <motion.div
                     key={event.id}
                     initial={{ opacity: 0, scale: 0.9 }}
@@ -927,7 +927,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               className="space-y-8 text-left"
             >
               {(() => {
-                const displayed = myEvents.filter(e => {
+                const displayed = (myEvents || []).filter(e => {
                   const matchesCat = submissionsFilter === 'uncategorized' ? e.category === 'Undefined' : true;
                   const matchesDate = isEventInDateRange(
                     e.date,
@@ -1370,32 +1370,32 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                       <h4 className="text-xl font-black text-gray-900 uppercase tracking-tight flex items-center gap-3">
                         <Zap className="w-5 h-5 text-orange-600" />
-                        Organization Broadcast Signals ({orgEvents.length})
+                        Organization Broadcast Signals ({(orgEvents || []).length})
                       </h4>
 
-                      {user.orgRole === 'owner' && orgEvents.length > 0 && (
+                      {user.orgRole === 'owner' && (orgEvents || []).length > 0 && (
                         <div className="flex items-center gap-3">
                           <button
                             type="button"
                             onClick={() => {
-                              const allSelected = orgEvents.every(e => selectedOrgEventIds.includes(e.id));
+                              const allSelected = (orgEvents || []).every(e => selectedOrgEventIds.includes(e.id));
                               if (allSelected) {
                                 setSelectedOrgEventIds([]);
                               } else {
-                                setSelectedOrgEventIds(orgEvents.map(e => e.id));
+                                setSelectedOrgEventIds((orgEvents || []).map(e => e.id));
                               }
                             }}
                             className="px-4 py-2 border border-gray-200 hover:border-black rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-700 transition-colors flex items-center gap-2 cursor-pointer bg-white"
                           >
-                            {orgEvents.every(e => selectedOrgEventIds.includes(e.id)) ? (
+                            {(orgEvents || []).every(e => selectedOrgEventIds.includes(e.id)) ? (
                               <>
                                 <CheckSquare className="w-4 h-4 text-orange-600" />
-                                Deselect All ({orgEvents.length})
+                                Deselect All ({(orgEvents || []).length})
                               </>
                             ) : (
                               <>
                                 <Square className="w-4 h-4 text-gray-400" />
-                                Select All ({orgEvents.length})
+                                Select All ({(orgEvents || []).length})
                               </>
                             )}
                           </button>
@@ -1418,7 +1418,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                             type="button"
                             disabled={isBatchDeletingOrg}
                             onClick={async () => {
-                              const selectedObjs = orgEvents.filter(e => selectedOrgEventIds.includes(e.id));
+                              const selectedObjs = (orgEvents || []).filter(e => selectedOrgEventIds.includes(e.id));
                               setIsBatchDeletingOrg(true);
                               try {
                                 await handleBatchDelete(selectedObjs);
@@ -1444,7 +1444,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
                     )}
                     
-                    {orgEvents.length > 0 ? (
+                    {(orgEvents || []).length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
                         {orgEvents.map((event) => {
                           const isSelected = selectedOrgEventIds.includes(event.id);
@@ -1724,9 +1724,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   {CITIES.map(city => (
                     <button
                       key={city.id}
-                      onClick={() => onUpdatePreferences({ ...user.preferences, favoriteCity: city.name })}
+                      onClick={() => onUpdatePreferences({ ...(user.preferences || { favoriteCategories: [] }), favoriteCity: city.name })}
                       className={`p-8 rounded-[2rem] border-2 transition-all text-center ${
-                        user.preferences.favoriteCity === city.name
+                        user.preferences?.favoriteCity === city.name
                           ? 'border-black bg-black text-white shadow-2xl'
                           : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
                       }`}
@@ -1749,12 +1749,12 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       key={cat}
                       onClick={() => toggleCategory(cat)}
                       className={`flex flex-col items-center justify-center p-6 rounded-[2rem] border-2 transition-all gap-3 ${
-                        user.preferences.favoriteCategories.includes(cat)
+                        user.preferences?.favoriteCategories?.includes(cat)
                           ? 'border-orange-600 bg-orange-50 text-orange-600 shadow-xl shadow-orange-600/10'
                           : 'border-gray-100 bg-gray-50 text-gray-400 hover:border-gray-200'
                       }`}
                     >
-                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user.preferences.favoriteCategories.includes(cat) ? 'bg-orange-600 text-white' : 'bg-white text-gray-300'}`}>
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${user.preferences?.favoriteCategories?.includes(cat) ? 'bg-orange-600 text-white' : 'bg-white text-gray-300'}`}>
                         <Tag className="w-5 h-5" />
                       </div>
                       <span className="text-[9px] font-black uppercase tracking-widest text-center">{cat}</span>

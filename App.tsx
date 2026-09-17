@@ -1224,7 +1224,7 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
           <ProfileView 
             user={user} 
-            savedEvents={user.savedEvents}
+            savedEvents={user.savedEvents || []}
             myEvents={dbEvents.filter(e => e.userId === user.id)}
             orgEvents={dbEvents.filter(e => user.orgId && e.orgId === user.orgId)}
             onUpdatePreferences={handleUpdatePreferences}
