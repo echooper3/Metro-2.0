@@ -38,7 +38,9 @@ import {
   Inbox,
   CheckSquare,
   Square,
-  Loader2
+  Loader2,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -75,7 +77,7 @@ interface ProfileViewProps {
   onToggleSave: (event: EventActivity) => void;
   onDeleteEvent: (event: EventActivity) => void;
   onDeleteMultipleEvents?: (events: EventActivity[]) => Promise<void>;
-  onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string, accountType?: 'individual' | 'organizer' | 'business') => void;
+  onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string, accountType?: 'individual' | 'organizer' | 'business', avatar?: string) => void;
   onUpdateOrgInfo: (orgId?: string, orgRole?: 'owner' | 'member') => void;
   isAdmin?: boolean;
   isFirebaseConnected?: boolean | null;
@@ -119,6 +121,101 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [editAccountType, setEditAccountType] = useState<'individual' | 'organizer' | 'business'>(
     user.accountType || (user.isOrganizer ? 'organizer' : 'individual')
   );
+  const [editAvatar, setEditAvatar] = useState(user.avatar || '');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isUploadingOrgLogo, setIsUploadingOrgLogo] = useState(false);
+  const [isUploadingNewOrgLogo, setIsUploadingNewOrgLogo] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  const headerAvatarFileInputRef = useRef<HTMLInputElement>(null);
+  const orgLogoFileInputRef = useRef<HTMLInputElement>(null);
+  const newOrgLogoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFile = async (file: File, autoSave = false) => {
+    if (!file) return;
+    setIsUploadingAvatar(true);
+    try {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const compressed = await compressImage(reader.result as string, 500, 500);
+          setEditAvatar(compressed);
+          if (autoSave) {
+            onUpdateProfile(
+              editName || user.name,
+              editEmail || user.email,
+              editPhone || user.phone,
+              editBirthday || user.birthday,
+              editZipCode || user.zipCode,
+              editAccountType || user.accountType,
+              compressed
+            );
+          }
+        } catch (err) {
+          console.error("Failed to compress avatar image:", err);
+        } finally {
+          setIsUploadingAvatar(false);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleOrgLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && orgData) {
+      setIsUploadingOrgLogo(true);
+      try {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const compressed = await compressImage(reader.result as string, 600, 600);
+            await updateDoc(doc(db, 'organizations', orgData.id), {
+              logoUrl: compressed
+            });
+            setOrgData(prev => prev ? { ...prev, logoUrl: compressed } : null);
+            alert("Organization / Business logo updated successfully!");
+          } catch (err: any) {
+            console.error("Error updating org logo:", err);
+            alert(`Failed to update organization logo: ${err?.message || err}`);
+          } finally {
+            setIsUploadingOrgLogo(false);
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        console.error(err);
+        setIsUploadingOrgLogo(false);
+      }
+    }
+  };
+
+  const handleNewOrgLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIsUploadingNewOrgLogo(true);
+      try {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const compressed = await compressImage(reader.result as string, 600, 600);
+            setOrgLogoUrl(compressed);
+          } catch (err) {
+            console.error("Failed to compress logo:", err);
+          } finally {
+            setIsUploadingNewOrgLogo(false);
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (err) {
+        console.error(err);
+        setIsUploadingNewOrgLogo(false);
+      }
+    }
+  };
+
   const [isEditing, setIsEditing] = useState(false);
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
@@ -480,13 +577,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setEditBirthday(user.birthday || '');
     setEditZipCode(user.zipCode || '');
     setEditAccountType(user.accountType || (user.isOrganizer ? 'organizer' : 'individual'));
+    setEditAvatar(user.avatar || '');
     if (!orgName && user.businessName) {
       setOrgName(user.businessName);
     }
     if (!orgEmail && user.email) {
       setOrgEmail(user.email);
     }
-  }, [user.name, user.email, user.phone, user.birthday, user.zipCode, user.accountType, user.isOrganizer, user.businessName]);
+  }, [user.name, user.email, user.phone, user.birthday, user.zipCode, user.accountType, user.isOrganizer, user.businessName, user.avatar]);
 
   React.useEffect(() => {
     if (activeTab === 'privacy') {
@@ -569,16 +667,56 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         
         <div className="flex flex-col md:flex-row items-center gap-10 relative z-10">
           <div className="relative group">
-            <div className="w-32 h-32 md:w-40 md:h-40 bg-black rounded-[3rem] flex items-center justify-center rotate-3 group-hover:rotate-6 transition-transform duration-500 shadow-2xl shadow-black/20 overflow-hidden">
-              {user.avatar ? (
-                <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+            <div className="w-32 h-32 md:w-40 md:h-40 bg-black rounded-[3rem] flex items-center justify-center rotate-3 group-hover:rotate-6 transition-transform duration-500 shadow-2xl shadow-black/20 overflow-hidden relative">
+              {editAvatar || user.avatar ? (
+                <img src={editAvatar || user.avatar} alt={user.name} className="w-full h-full object-cover" />
               ) : (
                 <User className="w-16 h-16 text-white" />
               )}
+              {/* Quick upload overlay */}
+              <button
+                type="button"
+                onClick={() => headerAvatarFileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity cursor-pointer p-2 text-center"
+                title="Update Profile / Business Picture"
+              >
+                {isUploadingAvatar ? (
+                  <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Camera className="w-6 h-6 mb-1 text-white" />
+                    <span className="text-[9px] font-black uppercase tracking-wider">Change Picture</span>
+                  </>
+                )}
+              </button>
             </div>
-            <div className="absolute -bottom-2 -right-2 w-12 h-12 bg-orange-600 rounded-2xl flex items-center justify-center shadow-xl border-4 border-white">
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
+
+            {/* Quick upload badge */}
+            <button
+              type="button"
+              onClick={() => headerAvatarFileInputRef.current?.click()}
+              disabled={isUploadingAvatar}
+              className="absolute -bottom-2 -right-2 w-12 h-12 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl flex items-center justify-center shadow-xl border-4 border-white cursor-pointer transition-transform hover:scale-110"
+              title="Upload Profile Picture"
+            >
+              {isUploadingAvatar ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera className="w-5 h-5 text-white" />
+              )}
+            </button>
+            
+            <input 
+              ref={headerAvatarFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleAvatarFile(file, true);
+              }}
+            />
           </div>
 
           <div className="flex-1 text-center md:text-left">
@@ -655,7 +793,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => {
-                    onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType);
+                    onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType, editAvatar);
                     setIsEditing(false);
                   }}
                   className="px-8 py-5 bg-orange-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
@@ -670,6 +808,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     setEditName(user.name);
                     setEditEmail(user.email);
                     setEditAccountType(user.accountType || (user.isOrganizer ? 'organizer' : 'individual'));
+                    setEditAvatar(user.avatar || '');
                     setIsEditing(false);
                   }}
                   className="px-8 py-5 bg-gray-100 text-gray-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3"
@@ -713,7 +852,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       </div>
 
       {/* Tabs */}
-      <div className="sticky top-24 z-30 bg-white/80 backdrop-blur-md py-4 -mx-4 px-4 mb-12 flex space-x-4 overflow-x-auto scrollbar-hide">
+      <div className="sticky top-24 z-30 bg-white/95 backdrop-blur-md py-3 px-3 md:px-4 mb-10 rounded-[2.25rem] border border-gray-100 shadow-sm flex flex-wrap items-center gap-2 md:gap-2.5">
         {[
           { id: 'saved', label: 'Saved Signals', icon: Heart },
           { id: 'submissions', label: 'My Submissions', icon: Zap },
@@ -727,14 +866,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-3 px-10 py-6 rounded-[2rem] text-[10px] font-black uppercase tracking-[0.2em] transition-all shrink-0 ${
+            className={`flex items-center gap-2 md:gap-2.5 px-4 py-2.5 md:px-5 md:py-3 rounded-2xl md:rounded-[1.4rem] text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeTab === tab.id 
-                ? 'bg-black text-white shadow-2xl shadow-black/20' 
-                : 'bg-white text-gray-400 hover:bg-gray-50 border border-gray-100'
+                ? 'bg-black text-white shadow-lg shadow-black/20 scale-[1.02]' 
+                : 'bg-gray-50/80 text-gray-500 hover:text-black hover:bg-gray-100 border border-gray-100'
             }`}
           >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
+            <tab.icon className={`w-3.5 h-3.5 md:w-4 md:h-4 ${activeTab === tab.id ? 'text-orange-500' : 'text-gray-400'}`} />
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>
@@ -1110,12 +1249,54 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 // User has an organization
                 <div className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100">
                   <div className="flex flex-col lg:flex-row items-start gap-12 pb-12 border-b border-gray-100 mb-12">
-                    <div className="w-32 h-32 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-[2.5rem] flex items-center justify-center text-white text-4xl font-black uppercase shadow-2xl shadow-orange-500/10 shrink-0 overflow-hidden">
-                      {orgData.logoUrl ? (
-                        <img src={orgData.logoUrl} alt={orgData.name} className="w-full h-full object-cover rounded-[2.5rem]" />
-                      ) : (
-                        orgData.name.substring(0, 2)
+                    <div className="relative group shrink-0">
+                      <div className="w-32 h-32 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-[2.5rem] flex items-center justify-center text-white text-4xl font-black uppercase shadow-2xl shadow-orange-500/10 overflow-hidden relative">
+                        {orgData.logoUrl ? (
+                          <img src={orgData.logoUrl} alt={orgData.name} className="w-full h-full object-cover rounded-[2.5rem]" />
+                        ) : (
+                          orgData.name.substring(0, 2)
+                        )}
+                        {user.orgRole === 'owner' && (
+                          <button
+                            type="button"
+                            onClick={() => orgLogoFileInputRef.current?.click()}
+                            disabled={isUploadingOrgLogo}
+                            className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity cursor-pointer p-2 text-center"
+                            title="Change Brand / Organization Logo"
+                          >
+                            {isUploadingOrgLogo ? (
+                              <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <>
+                                <Camera className="w-6 h-6 mb-1 text-white" />
+                                <span className="text-[9px] font-black uppercase tracking-wider">Change Logo</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      {user.orgRole === 'owner' && (
+                        <button
+                          type="button"
+                          onClick={() => orgLogoFileInputRef.current?.click()}
+                          disabled={isUploadingOrgLogo}
+                          className="absolute -bottom-2 -right-2 w-10 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-xl flex items-center justify-center shadow-lg border-2 border-white cursor-pointer transition-transform hover:scale-110"
+                          title="Upload Brand Logo"
+                        >
+                          {isUploadingOrgLogo ? (
+                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Camera className="w-4 h-4 text-white" />
+                          )}
+                        </button>
                       )}
+                      <input 
+                        ref={orgLogoFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleOrgLogoFileChange}
+                      />
                     </div>
                     
                     <div className="flex-1 space-y-4">
@@ -1151,6 +1332,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     
                     <div className="flex flex-col sm:flex-row lg:flex-col gap-4 w-full lg:w-auto shrink-0">
+                      {user.orgRole === 'owner' && (
+                        <button 
+                          type="button"
+                          onClick={() => orgLogoFileInputRef.current?.click()}
+                          disabled={isUploadingOrgLogo}
+                          className="px-8 py-5 bg-orange-50 text-orange-700 hover:bg-orange-100 font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-sm w-full text-center flex items-center justify-center gap-2 cursor-pointer border border-orange-200"
+                        >
+                          {isUploadingOrgLogo ? (
+                            <div className="w-3.5 h-3.5 border-2 border-orange-600 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Camera className="w-3.5 h-3.5 text-orange-600" />
+                          )}
+                          {orgData.logoUrl ? 'Update Brand Logo' : 'Upload Brand Logo'}
+                        </button>
+                      )}
                       {user.orgRole === 'owner' ? (
                         <button 
                           onClick={handleDisbandOrg}
@@ -1350,28 +1546,73 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                           className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
                         />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
-                            {user.accountType === 'business' ? 'Business Website URL' : 'Website URL'}
-                          </label>
-                          <input 
-                            type="url" 
-                            placeholder="https://yourcompany.com" 
-                            value={orgWebsite}
-                            onChange={(e) => setOrgWebsite(e.target.value)}
-                            className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Logo URL (Optional)</label>
-                          <input 
-                            type="url" 
-                            placeholder="https://.../logo.png" 
-                            value={orgLogoUrl}
-                            onChange={(e) => setOrgLogoUrl(e.target.value)}
-                            className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
-                          />
+                      <div>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
+                          {user.accountType === 'business' ? 'Business Website URL' : 'Website URL'}
+                        </label>
+                        <input 
+                          type="url" 
+                          placeholder="https://yourcompany.com" 
+                          value={orgWebsite}
+                          onChange={(e) => setOrgWebsite(e.target.value)}
+                          className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
+                        />
+                      </div>
+
+                      {/* Organization / Business Logo */}
+                      <div className="space-y-3">
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 block">
+                          {user.accountType === 'business' ? 'Business Logo & Brand Image' : 'Organization Brand Logo'}
+                        </label>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <div className="w-16 h-16 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-2xl flex items-center justify-center text-white text-xl font-black uppercase overflow-hidden shrink-0 border border-gray-200 shadow-sm">
+                            {orgLogoUrl ? (
+                              <img src={orgLogoUrl} alt="Logo Preview" className="w-full h-full object-cover" />
+                            ) : (
+                              <Building2 className="w-7 h-7 text-white/80" />
+                            )}
+                          </div>
+                          <div className="flex-1 w-full space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => newOrgLogoFileInputRef.current?.click()}
+                                disabled={isUploadingNewOrgLogo}
+                                className="px-4 py-2 bg-black hover:bg-orange-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+                              >
+                                {isUploadingNewOrgLogo ? (
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <Upload className="w-3.5 h-3.5" />
+                                )}
+                                Upload Logo Image
+                              </button>
+                              {orgLogoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setOrgLogoUrl('')}
+                                  className="px-3 py-2 text-red-500 hover:text-red-700 text-[9px] font-black uppercase tracking-wider cursor-pointer"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                              <span className="text-[9px] text-gray-400 font-bold">Auto-optimized for web</span>
+                            </div>
+                            <input 
+                              type="url" 
+                              placeholder="Or paste Logo URL (https://.../logo.png)" 
+                              value={orgLogoUrl}
+                              onChange={(e) => setOrgLogoUrl(e.target.value)}
+                              className="w-full bg-white border border-gray-200 rounded-xl py-2 px-3 text-xs font-medium focus:border-black outline-none transition-all"
+                            />
+                            <input 
+                              ref={newOrgLogoFileInputRef}
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={handleNewOrgLogoFileChange}
+                            />
+                          </div>
                         </div>
                       </div>
                       <div>
@@ -1535,6 +1776,118 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               className="bg-white rounded-[3rem] p-10 md:p-16 shadow-2xl shadow-black/5 border border-gray-100"
             >
               <div className="max-w-xl space-y-10">
+                {/* Profile Picture / Brand Logo Section */}
+                <div className="p-8 bg-gray-50/80 rounded-[2.5rem] border border-gray-100 space-y-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <Camera className="w-4 h-4 text-orange-600" />
+                      <label className="text-[10px] font-black uppercase tracking-widest text-gray-900">
+                        {editAccountType === 'business' 
+                          ? 'Business Profile & Brand Picture' 
+                          : editAccountType === 'organizer'
+                          ? 'Organizer Emblem & Avatar'
+                          : 'Profile Picture & Avatar'}
+                      </label>
+                    </div>
+                    <p className="text-[11px] text-gray-500 font-medium">
+                      {editAccountType === 'business'
+                        ? 'Provide a picture or logo for your business partner profile, sponsorships, and organization hub.'
+                        : editAccountType === 'organizer'
+                        ? 'Upload a photo or emblem to brand your organizer profile and public event signals.'
+                        : 'Upload a personal profile picture or pick an avatar preset for your Metropolitan vault.'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
+                    <div className="relative group">
+                      <div className="w-24 h-24 sm:w-28 sm:h-28 bg-black rounded-[2rem] flex items-center justify-center overflow-hidden border-2 border-gray-200 shadow-md">
+                        {editAvatar ? (
+                          <img src={editAvatar} alt="Avatar Preview" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-12 h-12 text-white/70" />
+                        )}
+                      </div>
+                      {editAvatar && (
+                        <button
+                          type="button"
+                          onClick={() => setEditAvatar('')}
+                          className="absolute -top-2 -right-2 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-red-700 transition-colors cursor-pointer"
+                          title="Remove Photo"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex-1 space-y-3 w-full">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          disabled={isUploadingAvatar}
+                          className="px-5 py-3 bg-black hover:bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                        >
+                          {isUploadingAvatar ? (
+                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Upload className="w-3.5 h-3.5" />
+                          )}
+                          Upload Picture
+                        </button>
+                        <input
+                          ref={avatarFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleAvatarFile(file, false);
+                          }}
+                        />
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                          JPG, PNG, WebP (auto-optimized)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="url"
+                          value={editAvatar}
+                          onChange={(e) => setEditAvatar(e.target.value)}
+                          placeholder="Or paste image link (https://...)"
+                          className="w-full bg-white border border-gray-200 rounded-xl py-2.5 px-4 text-xs font-medium focus:border-black outline-none transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preset Avatars */}
+                  <div className="pt-2 border-t border-gray-200/60">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 block mb-3">Quick Presets</span>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {[
+                        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+                        'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
+                        'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200',
+                        'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
+                        'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200',
+                        'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=200'
+                      ].map((presetUrl, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setEditAvatar(presetUrl)}
+                          className={`w-11 h-11 rounded-2xl overflow-hidden border-2 transition-all cursor-pointer hover:scale-110 ${
+                            editAvatar === presetUrl ? 'border-orange-600 ring-2 ring-orange-500/30' : 'border-transparent hover:border-gray-300'
+                          }`}
+                        >
+                          <img src={presetUrl} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-4 block">Display Name</label>
                   <input 
@@ -1617,7 +1970,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
                 <div className="pt-6">
                   <button 
-                    onClick={() => onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType)}
+                    onClick={() => onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType, editAvatar)}
                     className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl cursor-pointer"
                   >
                     Update Account Data

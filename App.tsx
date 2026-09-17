@@ -758,7 +758,8 @@ const App: React.FC = () => {
     phone?: string, 
     birthday?: string, 
     zipCode?: string, 
-    accountType?: 'individual' | 'organizer' | 'business'
+    accountType?: 'individual' | 'organizer' | 'business',
+    avatar?: string
   ) => {
     if (!user) return;
     try {
@@ -772,6 +773,9 @@ const App: React.FC = () => {
       if (accountType) {
         updates.accountType = accountType;
         updates.isOrganizer = accountType === 'organizer' || accountType === 'business';
+      }
+      if (avatar !== undefined) {
+        updates.avatar = avatar;
       }
       await updateDoc(doc(db, 'users', user.id), updates);
       setUser(prev => prev ? { ...prev, ...updates } : null);
