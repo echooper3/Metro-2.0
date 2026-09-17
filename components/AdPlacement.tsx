@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ExternalLink, Sparkles, ShieldCheck, ArrowRight, TrendingUp } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, onSnapshot, doc, updateDoc, increment } from 'firebase/firestore';
+import { buildTrackedUrl } from '../utils/trackingUtils';
 
 interface Ad {
   id: string;
@@ -103,7 +104,15 @@ const AdPlacement: React.FC<AdPlacementProps> = ({ type, cityId, className = '',
       } catch (e) {
         console.warn('Failed to record ad click:', e);
       }
-      window.open(ad.url, '_blank', 'noopener,noreferrer');
+
+      const medium = type === 'banner' ? 'sponsor_banner' : type === 'card' ? 'sponsor_card' : 'sponsor_inline';
+      const trackedUrl = buildTrackedUrl(ad.url, {
+        source: 'inside_the_metro',
+        medium,
+        campaign: ad.title,
+        content: ad.cityId || 'general'
+      });
+      window.open(trackedUrl, '_blank', 'noopener,noreferrer');
     }
   };
 

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, Shield, ArrowRight, User, Mail, Lock, Phone, MapPin, Calendar, Chrome } from 'lucide-react';
+import { X, Shield, ArrowRight, User, Mail, Lock, Phone, MapPin, Calendar, Chrome, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from '../firebase';
 import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -18,6 +18,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
+    business_name: '',
     email: '',
     password: '',
     phone: '',
@@ -72,20 +73,49 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             displayName: `${formData.first_name} ${formData.last_name}`
           });
           
-          const profileData = {
+          const profileData: any = {
             id: result.user.uid,
-            name: `${formData.first_name} ${formData.last_name}`,
+            name: `${formData.first_name} ${formData.last_name}`.trim() || 'Metropolitan Member',
             email: formData.email,
-            phone: formData.phone,
-            birthday: formData.birthday,
-            zipCode: formData.zip_code,
-            metroId: formData.user_id,
-            isOrganizer: accountType === 'organizer',
+            phone: formData.phone || '',
+            birthday: formData.birthday || '',
+            zipCode: formData.zip_code || '',
+            metroId: formData.user_id || '',
+            isOrganizer: accountType === 'organizer' || accountType === 'business',
             accountType: accountType,
             savedEvents: [],
             preferences: { favoriteCategories: [] },
             createdAt: new Date().toISOString()
           };
+
+          // If signing up as a business and provided a business name, pre-create the business organization
+          if (accountType === 'business' && formData.business_name?.trim()) {
+            const bName = formData.business_name.trim();
+            profileData.businessName = bName;
+
+            try {
+              const cleanSlug = bName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'business';
+              const uniqueOrgId = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+              const newOrg: any = {
+                id: uniqueOrgId,
+                name: bName,
+                description: `Official Metropolitan business profile for ${bName}.`,
+                ownerId: result.user.uid,
+                members: [result.user.uid],
+                logoUrl: `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
+                createdAt: serverTimestamp(),
+                email: formData.email,
+                ...(formData.phone ? { phone: formData.phone } : {})
+              };
+
+              await setDoc(doc(db, 'organizations', uniqueOrgId), newOrg);
+              profileData.orgId = uniqueOrgId;
+              profileData.orgRole = 'owner';
+            } catch (orgErr) {
+              console.warn("Could not auto-create business organization during signup, will allow manual setup in profile:", orgErr);
+            }
+          }
           
           await setDoc(doc(db, 'users', result.user.uid), profileData);
           
@@ -270,6 +300,20 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                   {accountType === 'organizer' && 'For event hosts. Establish organizations and publish official events.'}
                   {accountType === 'business' && 'For businesses/venues. Promote sponsorships and host premium listings.'}
                 </p>
+
+                {accountType === 'business' && (
+                  <div className="relative pt-2 animate-fade-in">
+                    <label className={labelClasses}>Business or Venue Name (Optional)</label>
+                    <input 
+                      type="text" 
+                      className={inputClasses} 
+                      value={formData.business_name} 
+                      onChange={e => setFormData({...formData, business_name: e.target.value})} 
+                      placeholder="e.g. Cain's Ballroom or Metro Cafe" 
+                    />
+                    <Building2 className="absolute left-4 top-[50px] w-4 h-4 text-gray-300" />
+                  </div>
+                )}
               </div>
             </>
           )}

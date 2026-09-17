@@ -84,6 +84,8 @@ export interface UserProfile {
   phone?: string;
   birthday?: string;
   zipCode?: string;
+  metroId?: string;
+  businessName?: string;
   role?: 'admin' | 'user';
   accountType?: 'individual' | 'organizer' | 'business';
   savedEvents: EventActivity[]; // Full objects for persistence across hubs

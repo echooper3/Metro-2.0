@@ -15,6 +15,7 @@ interface CreateEventModalProps {
   defaultCity?: string;
   eventToEdit?: EventActivity;
   userOrg?: Organization;
+  existingEvents?: EventActivity[];
 }
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -80,7 +81,7 @@ const parseYoutubeUrl = (url: string): string => {
   return url;
 };
 
-const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity, eventToEdit, userOrg }) => {
+const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, userId, defaultCity, eventToEdit, userOrg, existingEvents }) => {
   const [postAsOrg, setPostAsOrg] = useState(eventToEdit?.orgId ? true : false);
   const [formData, setFormData] = useState<Partial<EventActivity>>({
     title: eventToEdit?.title || '',
@@ -95,6 +96,24 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     price: eventToEdit?.price || '',
     ageRestriction: eventToEdit?.ageRestriction || ''
   });
+
+  const duplicateConflict = React.useMemo(() => {
+    if (!existingEvents || !formData.title?.trim()) return null;
+    const normTitle = formData.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+    const normDate = formData.date?.trim();
+
+    return existingEvents.find(e => {
+      if (eventToEdit && e.id === eventToEdit.id) return false;
+      const otherNormTitle = (e.title || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+      const otherNormDate = (e.date || '').trim();
+
+      const titleMatches = normTitle === otherNormTitle;
+      const dateMatches = Boolean(normDate && otherNormDate && normDate === otherNormDate);
+      const cityMatches = (e.cityName || '').toLowerCase() === (formData.cityName || '').toLowerCase();
+
+      return titleMatches && (dateMatches || cityMatches);
+    });
+  }, [existingEvents, formData.title, formData.date, formData.cityName, eventToEdit]);
 
   const [addressInput, setAddressInput] = useState(eventToEdit?.location || '');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
@@ -442,6 +461,18 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
                   transition={{ type: "spring", stiffness: 500, damping: 30 }}
                 />
               </button>
+            </div>
+          )}
+
+          {duplicateConflict && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs animate-fade-in mb-4">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-black uppercase tracking-wide block">Duplicate Protocol Alert</span>
+                <span className="text-[11px] text-amber-800 block mt-1 leading-relaxed">
+                  An event titled <strong>"{duplicateConflict.title}"</strong> is already recorded in {duplicateConflict.cityName || 'the database'} ({duplicateConflict.date || 'Date TBD'}). Creating this may result in a duplicate signal.
+                </span>
+              </div>
             </div>
           )}
 

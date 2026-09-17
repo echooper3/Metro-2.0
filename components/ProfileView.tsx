@@ -5,8 +5,9 @@ import EventItem from './EventItem';
 import ErrorBoundary from './ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment, getDoc, setDoc, getDocs, arrayUnion, arrayRemove, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { doc, deleteDoc, collection, addDoc, serverTimestamp, updateDoc, increment, getDoc, setDoc, getDocs, arrayUnion, arrayRemove, onSnapshot, query, where, orderBy, deleteField } from 'firebase/firestore';
 import bulkEvents from '../src/data/events.json';
+import { DateFilterType, isEventInDateRange } from '../utils/dateUtils';
 import { 
   User, 
   Settings, 
@@ -32,7 +33,12 @@ import {
   Users,
   Globe,
   Megaphone,
-  Upload
+  Upload,
+  Edit3,
+  Inbox,
+  CheckSquare,
+  Square,
+  Loader2
 } from 'lucide-react';
 
 const compressImage = (base64Str: string, maxWidth = 1200, maxHeight = 800): Promise<string> => {
@@ -68,10 +74,13 @@ interface ProfileViewProps {
   onPostEvent: () => void;
   onToggleSave: (event: EventActivity) => void;
   onDeleteEvent: (event: EventActivity) => void;
-  onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => void;
+  onDeleteMultipleEvents?: (events: EventActivity[]) => Promise<void>;
+  onUpdateProfile: (name: string, email: string, phone?: string, birthday?: string, zipCode?: string, accountType?: 'individual' | 'organizer' | 'business') => void;
   onUpdateOrgInfo: (orgId?: string, orgRole?: 'owner' | 'member') => void;
   isAdmin?: boolean;
   isFirebaseConnected?: boolean | null;
+  onEditEvent?: (event: EventActivity) => void;
+  onNavigateToAdminQueue?: () => void;
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ 
@@ -85,17 +94,31 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   onPostEvent,
   onToggleSave,
   onDeleteEvent,
+  onDeleteMultipleEvents,
   onUpdateProfile,
   onUpdateOrgInfo,
   isAdmin,
-  isFirebaseConnected
+  isFirebaseConnected,
+  onEditEvent,
+  onNavigateToAdminQueue
 }) => {
   const [activeTab, setActiveTab] = useState<'saved' | 'submissions' | 'org' | 'preferences' | 'settings' | 'privacy' | 'admin' | 'sponsorships'>('saved');
+  const [submissionsFilter, setSubmissionsFilter] = useState<'all' | 'uncategorized'>('all');
+  const [submissionsDateFilter, setSubmissionsDateFilter] = useState<DateFilterType>('all');
+  const [submissionsCustomStart, setSubmissionsCustomStart] = useState<string>('');
+  const [submissionsCustomEnd, setSubmissionsCustomEnd] = useState<string>('');
+  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [selectedOrgEventIds, setSelectedOrgEventIds] = useState<string[]>([]);
+  const [isBatchDeletingOrg, setIsBatchDeletingOrg] = useState(false);
   const [editName, setEditName] = useState(user.name);
   const [editEmail, setEditEmail] = useState(user.email);
   const [editPhone, setEditPhone] = useState(user.phone || '');
   const [editBirthday, setEditBirthday] = useState(user.birthday || '');
   const [editZipCode, setEditZipCode] = useState(user.zipCode || '');
+  const [editAccountType, setEditAccountType] = useState<'individual' | 'organizer' | 'business'>(
+    user.accountType || (user.isOrganizer ? 'organizer' : 'individual')
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [cacheItems, setCacheItems] = useState<{key: string, size: number, timestamp: number}[]>([]);
   const [syncHealth, setSyncHealth] = useState<'optimal' | 'degraded' | 'offline'>('optimal');
@@ -110,7 +133,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
   const [isSubmittingOrg, setIsSubmittingOrg] = useState(false);
 
   // Creation form fields
-  const [orgName, setOrgName] = useState('');
+  const [orgName, setOrgName] = useState(user.businessName || '');
   const [orgDesc, setOrgDesc] = useState('');
 
   // Sponsorship states
@@ -304,38 +327,50 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     if (!orgName || !orgDesc) return;
     setIsSubmittingOrg(true);
     try {
-      const orgId = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const uniqueOrgId = `${orgId}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const cleanSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'org';
+      const uniqueOrgId = `${cleanSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
       
-      const newOrg: Omit<Organization, 'id'> = {
-        name: orgName,
-        description: orgDesc,
-        website: orgWebsite || undefined,
-        email: orgEmail || undefined,
-        phone: orgPhone || undefined,
-        logoUrl: orgLogoUrl || `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
+      const newOrg: Organization = {
+        id: uniqueOrgId,
+        name: orgName.trim(),
+        description: orgDesc.trim(),
         ownerId: user.id,
         members: [user.id],
-        createdAt: serverTimestamp()
+        logoUrl: orgLogoUrl || `https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&q=80&w=400`,
+        createdAt: serverTimestamp(),
+        ...(orgWebsite?.trim() ? { website: orgWebsite.trim() } : {}),
+        ...(orgEmail?.trim() ? { email: orgEmail.trim() } : {}),
+        ...(orgPhone?.trim() ? { phone: orgPhone.trim() } : {})
       };
 
       await setDoc(doc(db, 'organizations', uniqueOrgId), newOrg);
       
       // Update user document
-      await updateDoc(doc(db, 'users', user.id), {
+      const userUpdates: any = {
         orgId: uniqueOrgId,
-        orgRole: 'owner'
-      });
+        orgRole: 'owner',
+        isOrganizer: true
+      };
+      const finalAccountType = (user.accountType === 'business' || user.accountType === 'organizer') 
+        ? user.accountType 
+        : 'business';
+      userUpdates.accountType = finalAccountType;
+
+      await updateDoc(doc(db, 'users', user.id), userUpdates);
 
       if (onUpdateOrgInfo) {
         onUpdateOrgInfo(uniqueOrgId, 'owner');
       }
 
-      alert("Organization profile created successfully!");
+      if (onUpdateProfile) {
+        onUpdateProfile(user.name, user.email, user.phone, user.birthday, user.zipCode, finalAccountType);
+      }
+
+      alert("Business / Organization profile established successfully!");
       setIsCreatingOrg(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to create organization:", err);
-      alert("Failed to create organization profile.");
+      alert(`Failed to create organization profile: ${err?.message || err}`);
     } finally {
       setIsSubmittingOrg(false);
     }
@@ -359,9 +394,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
       }
 
       alert(`Successfully joined ${org.name}!`);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to join organization:", err);
-      alert("Failed to join organization.");
+      alert(`Failed to join organization: ${err?.message || err}`);
     }
   };
 
@@ -381,8 +416,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
         // Update user profile
         await updateDoc(doc(db, 'users', user.id), {
-          orgId: null,
-          orgRole: null
+          orgId: deleteField(),
+          orgRole: deleteField()
         });
 
         if (onUpdateOrgInfo) {
@@ -390,9 +425,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         }
 
         alert(`Successfully left ${orgData.name}.`);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to leave organization:", err);
-        alert("Failed to leave organization.");
+        alert(`Failed to leave organization: ${err?.message || err}`);
       }
     }
   };
@@ -406,8 +441,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         await deleteDoc(doc(db, 'organizations', orgData.id));
 
         await updateDoc(doc(db, 'users', user.id), {
-          orgId: null,
-          orgRole: null
+          orgId: deleteField(),
+          orgRole: deleteField()
         });
 
         if (onUpdateOrgInfo) {
@@ -415,9 +450,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         }
 
         alert(`Disbanded ${orgData.name} successfully.`);
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to disband organization:", err);
-        alert("Failed to disband organization.");
+        alert(`Failed to disband organization: ${err?.message || err}`);
       }
     }
   };
@@ -443,7 +478,11 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setEditPhone(user.phone || '');
     setEditBirthday(user.birthday || '');
     setEditZipCode(user.zipCode || '');
-  }, [user.name, user.email, user.phone, user.birthday, user.zipCode]);
+    setEditAccountType(user.accountType || (user.isOrganizer ? 'organizer' : 'individual'));
+    if (!orgName && user.businessName) {
+      setOrgName(user.businessName);
+    }
+  }, [user.name, user.email, user.phone, user.birthday, user.zipCode, user.accountType, user.isOrganizer, user.businessName]);
 
   React.useEffect(() => {
     if (activeTab === 'privacy') {
@@ -476,14 +515,37 @@ const ProfileView: React.FC<ProfileViewProps> = ({
     setCacheItems([]);
   };
 
-  const handleDelete = async (event: EventActivity) => {
+  const handleDelete = (event: EventActivity) => {
     if (window.confirm("Are you sure you want to terminate this broadcast signal?")) {
-      try {
-        await deleteDoc(doc(db, 'events', event.id));
-        onDeleteEvent(event);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `events/${event.id}`);
+      setSelectedEventIds(prev => prev.filter(id => id !== event.id));
+      setSelectedOrgEventIds(prev => prev.filter(id => id !== event.id));
+      onDeleteEvent(event);
+    }
+  };
+
+  const handleBatchDelete = async (eventsToDelete: EventActivity[]) => {
+    if (eventsToDelete.length === 0) return;
+    const count = eventsToDelete.length;
+    if (!window.confirm(`Permanently delete ${count} selected broadcast signal${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsBatchDeleting(true);
+    try {
+      if (onDeleteMultipleEvents) {
+        await onDeleteMultipleEvents(eventsToDelete);
+      } else {
+        for (const ev of eventsToDelete) {
+          onDeleteEvent(ev);
+        }
       }
+      setSelectedEventIds(prev => prev.filter(id => !eventsToDelete.some(e => e.id === id)));
+      setSelectedOrgEventIds(prev => prev.filter(id => !eventsToDelete.some(e => e.id === id)));
+    } catch (err) {
+      console.error("Failed to delete selected events:", err);
+      alert("An error occurred while deleting selected events.");
+    } finally {
+      setIsBatchDeleting(false);
     }
   };
 
@@ -517,10 +579,22 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
           <div className="flex-1 text-center md:text-left">
             <div className="flex flex-wrap justify-center md:justify-start gap-3 mb-4">
-              <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-full">
-                <Shield className="w-3 h-3 text-orange-600" />
-                <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Member</span>
-              </div>
+              {user.accountType === 'business' ? (
+                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-full shadow-lg shadow-orange-600/20">
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span className="font-black uppercase tracking-[0.25em] text-[9px]">Business Partner</span>
+                </div>
+              ) : (user.isOrganizer || user.accountType === 'organizer') ? (
+                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-black text-white rounded-full shadow-lg shadow-black/20">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span className="font-black uppercase tracking-[0.25em] text-[9px]">Event Organizer</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center space-x-2 px-4 py-2 bg-gray-50 rounded-full">
+                  <Shield className="w-3 h-3 text-orange-600" />
+                  <span className="text-orange-600 font-black uppercase tracking-[0.3em] text-[9px]">Metropolitan Member</span>
+                </div>
+              )}
               <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full ${apiStatus.gemini && apiStatus.ticketmaster && isFirebaseConnected ? 'bg-emerald-50 text-emerald-600' : 'bg-orange-50 text-orange-600'}`}>
                 <Zap className={`w-3 h-3 ${apiStatus.gemini && apiStatus.ticketmaster && isFirebaseConnected ? 'text-emerald-600' : 'text-orange-600'}`} />
                 <span className="font-black uppercase tracking-[0.3em] text-[9px]">
@@ -577,7 +651,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => {
-                    onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode);
+                    onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType);
                     setIsEditing(false);
                   }}
                   className="px-8 py-5 bg-orange-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-3"
@@ -591,6 +665,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   onClick={() => {
                     setEditName(user.name);
                     setEditEmail(user.email);
+                    setEditAccountType(user.accountType || (user.isOrganizer ? 'organizer' : 'individual'));
                     setIsEditing(false);
                   }}
                   className="px-8 py-5 bg-gray-100 text-gray-400 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3"
@@ -638,7 +713,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
         {[
           { id: 'saved', label: 'Saved Signals', icon: Heart },
           { id: 'submissions', label: 'My Submissions', icon: Zap },
-          { id: 'org', label: 'Organization Hub', icon: Building2 },
+          { id: 'org', label: user?.accountType === 'business' ? 'Business Profile' : 'Organization Hub', icon: Building2 },
           ...(user?.isOrganizer || user?.accountType === 'business' ? [{ id: 'sponsorships', label: 'Sponsorships', icon: Megaphone }] : []),
           { id: 'preferences', label: 'Hub Preferences', icon: Tag },
           { id: 'settings', label: 'Account Settings', icon: Settings },
@@ -706,34 +781,310 @@ const ProfileView: React.FC<ProfileViewProps> = ({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
+              className="space-y-8 text-left"
             >
-              {myEvents.length > 0 ? (
-                myEvents.map((event, i) => (
-                  <motion.div
-                    key={event.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="relative group"
-                  >
-                    <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
-                      className="absolute top-4 right-4 p-3 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-20"
-                      title="Delete Broadcast"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </motion.div>
-                ))
-              ) : (
-                <div className="col-span-full py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
-                  <Zap className="w-16 h-16 text-gray-100 mx-auto mb-8" />
-                  <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-8">You haven't broadcasted any signals yet</p>
-                  <button onClick={onPostEvent} className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline">Broadcast Your First Event</button>
-                </div>
-              )}
+              {(() => {
+                const displayed = myEvents.filter(e => {
+                  const matchesCat = submissionsFilter === 'uncategorized' ? e.category === 'Undefined' : true;
+                  const matchesDate = isEventInDateRange(
+                    e.date,
+                    submissionsDateFilter,
+                    submissionsCustomStart,
+                    submissionsCustomEnd,
+                    true
+                  );
+                  return matchesCat && matchesDate;
+                });
+
+                const allDisplayedSelected = displayed.length > 0 && displayed.every(e => selectedEventIds.includes(e.id));
+
+                return (
+                  <>
+                    {/* Header & Filter Controls */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm">
+                      <div>
+                        <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">
+                          My Broadcasted Signals ({myEvents.length})
+                        </h3>
+                        <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">
+                          Manage your submissions, bulk delete, and organize queue items
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        {isAdmin && (
+                          <div className="flex bg-gray-100 p-1 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSubmissionsFilter('all');
+                                setSelectedEventIds([]);
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer ${
+                                submissionsFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-500 hover:text-black'
+                              }`}
+                            >
+                              All ({myEvents.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSubmissionsFilter('uncategorized');
+                                setSelectedEventIds([]);
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 ${
+                                submissionsFilter === 'uncategorized' ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 hover:text-black'
+                              }`}
+                            >
+                              Queue ({myEvents.filter(e => e.category === 'Undefined').length})
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Date Filter Dropdown */}
+                        <div className="relative">
+                          <select
+                            value={submissionsDateFilter}
+                            onChange={e => {
+                              setSubmissionsDateFilter(e.target.value as any);
+                              setSelectedEventIds([]);
+                            }}
+                            className="bg-gray-100 hover:bg-gray-200 border-none rounded-xl py-2 px-3 text-[9px] font-black uppercase tracking-widest text-gray-700 cursor-pointer focus:outline-none"
+                          >
+                            <option value="all">All Dates</option>
+                            <option value="today">Today</option>
+                            <option value="weekend">This Weekend</option>
+                            <option value="week">Next 7 Days</option>
+                            <option value="month">Next 30 Days</option>
+                            <option value="past">Past Signals</option>
+                            <option value="custom">📅 Custom Range...</option>
+                          </select>
+                        </div>
+
+                        {displayed.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (allDisplayedSelected) {
+                                setSelectedEventIds(prev => prev.filter(id => !displayed.some(e => e.id === id)));
+                              } else {
+                                const toAdd = displayed.map(e => e.id);
+                                setSelectedEventIds(prev => Array.from(new Set([...prev, ...toAdd])));
+                              }
+                            }}
+                            className="px-4 py-2.5 border border-gray-200 hover:border-black rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-700 transition-colors flex items-center gap-2 cursor-pointer bg-white"
+                          >
+                            {allDisplayedSelected ? (
+                              <>
+                                <CheckSquare className="w-4 h-4 text-orange-600" />
+                                Deselect All ({displayed.length})
+                              </>
+                            ) : (
+                              <>
+                                <Square className="w-4 h-4 text-gray-400" />
+                                Select All ({displayed.length})
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={onPostEvent}
+                          className="px-5 py-2.5 bg-black hover:bg-orange-600 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all shadow-md shadow-black/10 flex items-center gap-2 cursor-pointer"
+                        >
+                          <PlusCircle className="w-4 h-4" />
+                          + Add New Signal
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Custom Date Range Bar */}
+                    {submissionsDateFilter === 'custom' && (
+                      <div className="p-4 bg-orange-50/60 border border-orange-200 rounded-2xl flex flex-wrap items-center justify-between gap-4 animate-fade-in text-xs">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-orange-900 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                            Filter Window:
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="date"
+                              value={submissionsCustomStart}
+                              onChange={e => {
+                                setSubmissionsCustomStart(e.target.value);
+                                setSelectedEventIds([]);
+                              }}
+                              className="bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-900 focus:outline-none focus:border-black shadow-sm"
+                              placeholder="Start Date"
+                            />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">to</span>
+                            <input
+                              type="date"
+                              value={submissionsCustomEnd}
+                              onChange={e => {
+                                setSubmissionsCustomEnd(e.target.value);
+                                setSelectedEventIds([]);
+                              }}
+                              className="bg-white border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-900 focus:outline-none focus:border-black shadow-sm"
+                              placeholder="End Date"
+                            />
+                          </div>
+                          {(submissionsCustomStart || submissionsCustomEnd) && (
+                            <span className="px-3 py-1 bg-white border border-orange-200 text-orange-700 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm">
+                              {submissionsCustomStart || 'Any'} → {submissionsCustomEnd || 'Any'}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubmissionsCustomStart('');
+                            setSubmissionsCustomEnd('');
+                            setSubmissionsDateFilter('all');
+                            setSelectedEventIds([]);
+                          }}
+                          className="text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-black underline cursor-pointer"
+                        >
+                          Reset Date Filter
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Batch Actions Bar */}
+                    {selectedEventIds.length > 0 && (
+                      <div className="p-4 bg-orange-50 border-2 border-orange-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-orange-600 animate-pulse" />
+                          <span className="text-xs font-black uppercase tracking-wider text-orange-900">
+                            {selectedEventIds.length} signal{selectedEventIds.length > 1 ? 's' : ''} selected
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={isBatchDeleting}
+                            onClick={() => {
+                              const selectedObjs = myEvents.filter(e => selectedEventIds.includes(e.id));
+                              handleBatchDelete(selectedObjs);
+                            }}
+                            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {isBatchDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Delete Selected ({selectedEventIds.length})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBatchDeleting}
+                            onClick={() => setSelectedEventIds([])}
+                            className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-black transition-colors underline cursor-pointer px-2"
+                          >
+                            Clear Selection
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Grid of Events */}
+                    {displayed.length === 0 ? (
+                      <div className="py-32 text-center bg-white rounded-[3rem] border border-dashed border-gray-200">
+                        <Zap className="w-16 h-16 text-gray-200 mx-auto mb-6" />
+                        <p className="text-gray-400 font-black uppercase tracking-[0.3em] text-[11px] mb-6">
+                          {submissionsFilter === 'uncategorized' ? 'No uncategorized queue signals found' : "You haven't broadcasted any signals yet"}
+                        </p>
+                        <button onClick={onPostEvent} className="text-orange-600 font-black uppercase tracking-widest text-[10px] hover:underline cursor-pointer">
+                          Broadcast a New Event
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        {displayed.map((event, i) => {
+                          const isSelected = selectedEventIds.includes(event.id);
+                          return (
+                            <motion.div
+                              key={event.id}
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={{ delay: i * 0.04 }}
+                              className={`relative group flex flex-col justify-between rounded-[2rem] p-4 border transition-all ${
+                                isSelected
+                                  ? 'bg-orange-50/20 border-orange-500 ring-2 ring-orange-500/30 shadow-md'
+                                  : 'bg-white border-gray-100 shadow-sm hover:border-gray-200'
+                              }`}
+                            >
+                              <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
+
+                              {/* Badges & Action Bar */}
+                              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedEventIds(prev => 
+                                        prev.includes(event.id) ? prev.filter(id => id !== event.id) : [...prev, event.id]
+                                      );
+                                    }}
+                                    className={`px-2.5 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                                        : 'border-gray-200 text-gray-600 hover:border-black hover:text-black bg-white'
+                                    }`}
+                                    title={isSelected ? "Deselect Event" : "Select Event for Deletion"}
+                                  >
+                                    {isSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                                    <span>{isSelected ? "Selected" : "Select"}</span>
+                                  </button>
+
+                                  {event.category === 'Undefined' ? (
+                                    <span className="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 shrink-0">
+                                      ⚠️ Queue
+                                    </span>
+                                  ) : (
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest truncate max-w-[90px]">
+                                      {event.category}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button 
+                                    type="button"
+                                    onClick={(e) => { 
+                                      e.stopPropagation(); 
+                                      if (onEditEvent) {
+                                        onEditEvent(event);
+                                      } else {
+                                        onOpenEventDetails(event);
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 border border-gray-200 hover:border-black hover:bg-gray-50 text-gray-800 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 cursor-pointer"
+                                    title="Edit Event"
+                                  >
+                                    <Edit3 className="w-3 h-3 text-gray-600" />
+                                    Edit
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
+                                    className="px-3 py-1.5 border border-red-200 hover:border-red-600 hover:bg-red-50 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-1 cursor-pointer"
+                                    title="Delete Broadcast"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </motion.div>
           </ErrorBoundary>
         )}
@@ -816,27 +1167,127 @@ const ProfileView: React.FC<ProfileViewProps> = ({
 
                   {/* Organization Events */}
                   <div>
-                    <h4 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-8 flex items-center gap-3">
-                      <Zap className="w-5 h-5 text-orange-600" />
-                      Organization Broadcast Signals ({orgEvents.length})
-                    </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                      <h4 className="text-xl font-black text-gray-900 uppercase tracking-tight flex items-center gap-3">
+                        <Zap className="w-5 h-5 text-orange-600" />
+                        Organization Broadcast Signals ({orgEvents.length})
+                      </h4>
+
+                      {user.orgRole === 'owner' && orgEvents.length > 0 && (
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allSelected = orgEvents.every(e => selectedOrgEventIds.includes(e.id));
+                              if (allSelected) {
+                                setSelectedOrgEventIds([]);
+                              } else {
+                                setSelectedOrgEventIds(orgEvents.map(e => e.id));
+                              }
+                            }}
+                            className="px-4 py-2 border border-gray-200 hover:border-black rounded-xl text-[10px] font-black uppercase tracking-widest text-gray-700 transition-colors flex items-center gap-2 cursor-pointer bg-white"
+                          >
+                            {orgEvents.every(e => selectedOrgEventIds.includes(e.id)) ? (
+                              <>
+                                <CheckSquare className="w-4 h-4 text-orange-600" />
+                                Deselect All ({orgEvents.length})
+                              </>
+                            ) : (
+                              <>
+                                <Square className="w-4 h-4 text-gray-400" />
+                                Select All ({orgEvents.length})
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Org Batch Actions Bar */}
+                    {user.orgRole === 'owner' && selectedOrgEventIds.length > 0 && (
+                      <div className="mb-8 p-4 bg-orange-50 border-2 border-orange-200 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 animate-fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-orange-600 animate-pulse" />
+                          <span className="text-xs font-black uppercase tracking-wider text-orange-900">
+                            {selectedOrgEventIds.length} signal{selectedOrgEventIds.length > 1 ? 's' : ''} selected
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={isBatchDeletingOrg}
+                            onClick={async () => {
+                              const selectedObjs = orgEvents.filter(e => selectedOrgEventIds.includes(e.id));
+                              setIsBatchDeletingOrg(true);
+                              try {
+                                await handleBatchDelete(selectedObjs);
+                              } finally {
+                                setIsBatchDeletingOrg(false);
+                              }
+                            }}
+                            className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center gap-2"
+                          >
+                            {isBatchDeletingOrg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Delete Selected ({selectedOrgEventIds.length})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBatchDeletingOrg}
+                            onClick={() => setSelectedOrgEventIds([])}
+                            className="text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-black transition-colors underline cursor-pointer px-2"
+                          >
+                            Clear Selection
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     
                     {orgEvents.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-                        {orgEvents.map((event) => (
-                          <div key={event.id} className="relative group">
-                            <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
-                            {user.orgRole === 'owner' && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
-                                className="absolute top-4 right-4 p-3 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl z-20"
-                                title="Delete Broadcast"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
+                        {orgEvents.map((event) => {
+                          const isSelected = selectedOrgEventIds.includes(event.id);
+                          return (
+                            <div 
+                              key={event.id} 
+                              className={`relative group rounded-[2.5rem] transition-all ${
+                                isSelected ? 'ring-4 ring-orange-500/40 shadow-xl' : ''
+                              }`}
+                            >
+                              <EventItem event={event} showCity={true} onOpenDetails={onOpenEventDetails} />
+                              {user.orgRole === 'owner' && (
+                                <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedOrgEventIds(prev => 
+                                        prev.includes(event.id) ? prev.filter(id => id !== event.id) : [...prev, event.id]
+                                      );
+                                    }}
+                                    className={`p-2.5 rounded-2xl shadow-lg transition-all cursor-pointer flex items-center justify-center ${
+                                      isSelected
+                                        ? 'bg-orange-600 text-white shadow-orange-600/30 scale-105'
+                                        : 'bg-white/90 backdrop-blur-md text-gray-500 hover:text-black hover:bg-white'
+                                    }`}
+                                    title={isSelected ? "Deselect Event" : "Select Event"}
+                                  >
+                                    {isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                                  </button>
+
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(event); }}
+                                    className="p-2.5 bg-red-600 text-white rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity shadow-xl cursor-pointer"
+                                    title="Delete Broadcast"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="py-20 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
@@ -857,40 +1308,52 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                         <Building2 className="w-6 h-6 text-orange-600" />
                       </div>
                       <div>
-                        <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">Establish Organization</h3>
-                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Launch a profile to publish official metropolitan schedules</p>
+                        <h3 className="text-2xl font-black text-gray-900 tracking-tight uppercase italic">
+                          {user.accountType === 'business' ? 'Establish Business Profile' : 'Establish Organization / Business Profile'}
+                        </h3>
+                        <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">
+                          {user.accountType === 'business' 
+                            ? 'Launch a verified profile for your business to publish official schedules and submit sponsorships' 
+                            : 'Launch a profile to publish official metropolitan schedules'}
+                        </p>
                       </div>
                     </div>
                     
                     <form onSubmit={handleCreateOrg} className="space-y-6">
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Organization Name</label>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
+                          {user.accountType === 'business' ? 'Business or Venue Name' : 'Business / Organization Name'}
+                        </label>
                         <input 
                           required
                           type="text" 
-                          placeholder="e.g. Tulsa Symphony Orchestra" 
+                          placeholder={user.accountType === 'business' ? "e.g. Cain's Ballroom or Metro Cafe" : "e.g. Tulsa Symphony Orchestra"} 
                           value={orgName}
                           onChange={(e) => setOrgName(e.target.value)}
                           className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
                         />
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Branding Email Address</label>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
+                          {user.accountType === 'business' ? 'Business Email Address' : 'Official Email Address'}
+                        </label>
                         <input 
                           required
                           type="email" 
-                          placeholder="info@yourorganization.org" 
-                          value={orgEmail}
+                          placeholder="info@yourcompany.com" 
+                          value={orgEmail || user.email}
                           onChange={(e) => setOrgEmail(e.target.value)}
                           className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
                         />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                         <div>
-                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Website URL</label>
+                          <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
+                            {user.accountType === 'business' ? 'Business Website URL' : 'Website URL'}
+                          </label>
                           <input 
                             type="url" 
-                            placeholder="https://yourorganization.org" 
+                            placeholder="https://yourcompany.com" 
                             value={orgWebsite}
                             onChange={(e) => setOrgWebsite(e.target.value)}
                             className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
@@ -908,10 +1371,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                         </div>
                       </div>
                       <div>
-                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">Mission & Description</label>
+                        <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 ml-1 mb-2 block">
+                          {user.accountType === 'business' ? 'Business Overview & Focus' : 'Mission & Description'}
+                        </label>
                         <textarea 
                           required
-                          placeholder="Briefly describe your organization's mission and event focus..." 
+                          placeholder={user.accountType === 'business' 
+                            ? "Briefly describe your business, venue, and upcoming events or promotions..." 
+                            : "Briefly describe your organization's mission and event focus..."} 
                           value={orgDesc}
                           onChange={(e) => setOrgDesc(e.target.value)}
                           className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-4 px-6 h-28 resize-none text-xs font-bold focus:bg-white focus:border-black outline-none transition-all"
@@ -928,7 +1395,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                         ) : (
                           <>
                             <Building2 className="w-4 h-4" />
-                            Create Profile
+                            {user.accountType === 'business' ? 'Establish Business Profile' : 'Establish Organization Profile'}
                           </>
                         )}
                       </button>
@@ -1115,10 +1582,39 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     className="w-full bg-gray-50 border-2 border-transparent rounded-2xl py-5 px-8 text-sm font-bold focus:bg-white focus:border-black outline-none transition-all"
                   />
                 </div>
+
+                <div className="space-y-4 pt-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 ml-1 block">Account Type & Membership Tier</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {([
+                      { type: 'individual', label: 'Individual Member', icon: User, desc: 'Browse and save events to your vault.' },
+                      { type: 'organizer', label: 'Event Organizer', icon: Sparkles, desc: 'Host organizations & publish official events.' },
+                      { type: 'business', label: 'Business Partner', icon: Building2, desc: 'Establish business profile & submit sponsorships.' }
+                    ] as const).map(item => (
+                      <button
+                        key={item.type}
+                        type="button"
+                        onClick={() => setEditAccountType(item.type)}
+                        className={`p-5 rounded-2xl border-2 transition-all flex flex-col items-start text-left gap-2 cursor-pointer ${
+                          editAccountType === item.type
+                            ? 'border-orange-500 bg-orange-50/70 text-orange-950 shadow-sm'
+                            : 'border-gray-100 bg-gray-50 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <item.icon className={`w-4 h-4 ${editAccountType === item.type ? 'text-orange-600' : 'text-gray-400'}`} />
+                          <span className="text-[10px] font-black uppercase tracking-wider">{item.label}</span>
+                        </div>
+                        <span className="text-[9px] text-gray-400 leading-tight">{item.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="pt-6">
                   <button 
-                    onClick={() => onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode)}
-                    className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl"
+                    onClick={() => onUpdateProfile(editName, editEmail, editPhone, editBirthday, editZipCode, editAccountType)}
+                    className="px-12 py-6 bg-black text-white font-black rounded-2xl text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-all shadow-xl cursor-pointer"
                   >
                     Update Account Data
                   </button>
@@ -1286,7 +1782,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
                   <div className="bg-gray-50 rounded-[2.5rem] p-10 border border-gray-100">
                     <div className="flex items-center gap-3 mb-6">
                       <Database className="w-5 h-5 text-orange-600" />
@@ -1409,6 +1905,57 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                           </div>
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  <div className="bg-gray-50 rounded-[2.5rem] p-10 border border-gray-100 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center gap-3 mb-6">
+                        <Inbox className="w-5 h-5 text-orange-600" />
+                        <h4 className="text-lg font-black text-gray-900 uppercase tracking-tight">Categorization Queue</h4>
+                      </div>
+                      <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                        Review, edit details, assign valid categories, or delete undefined/crawl-synced events waiting in the queue.
+                      </p>
+                      
+                      <div className="p-6 bg-white rounded-2xl border border-gray-100 mb-6">
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Uncategorized Events</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-2xl font-black text-gray-900">
+                            {myEvents.filter(e => e.category === 'Undefined').length}
+                          </span>
+                          <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-[9px] font-black uppercase tracking-wider">
+                            In Queue
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigateToAdminQueue) {
+                            onNavigateToAdminQueue();
+                          } else {
+                            setActiveTab('submissions');
+                            setSubmissionsFilter('uncategorized');
+                          }
+                        }}
+                        className="w-full py-4 bg-black hover:bg-orange-600 text-white font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 cursor-pointer"
+                      >
+                        <Inbox className="w-4 h-4" />
+                        Open Categorization Queue
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={onPostEvent}
+                        className="w-full py-4 border-2 border-black hover:bg-black hover:text-white text-black font-black rounded-2xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-3 cursor-pointer"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        + Add Event to Queue
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -15,9 +15,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isVerifiedUser() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
@@ -55,8 +52,10 @@ service cloud.firestore {
              (!('phone' in data) || data.phone is string) &&
              (!('birthday' in data) || data.birthday is string) &&
              (!('zipCode' in data) || data.zipCode is string) &&
-             (!('orgId' in data) || data.orgId is string) &&
-             (!('orgRole' in data) || data.orgRole is string) &&
+             (!('metroId' in data) || data.metroId is string) &&
+             (!('businessName' in data) || data.businessName is string) &&
+             (!('orgId' in data) || data.orgId is string || data.orgId == null) &&
+             (!('orgRole' in data) || data.orgRole is string || data.orgRole == null) &&
              (!('isOrganizer' in data) || data.isOrganizer is bool) &&
              (!('accountType' in data) || data.accountType is string) &&
              (!('role' in data) || data.role is string);
@@ -89,7 +88,7 @@ service cloud.firestore {
              (!('email' in data) || data.email is string) &&
              (!('phone' in data) || data.phone is string) &&
              (!('logoUrl' in data) || data.logoUrl is string) &&
-             data.ownerId is string && data.ownerId == request.auth.uid &&
+             data.ownerId is string && (data.ownerId == request.auth.uid || isAdmin()) &&
              data.members is list && data.members.size() <= 100;
     }
 
@@ -128,14 +127,14 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       
-      allow create: if isVerifiedUser() && isValidId(userId) && userId == request.auth.uid &&
+      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid &&
                     isValidUser(incoming()) && 
                     incoming().keys().hasAll(['id', 'name', 'email', 'savedEvents', 'preferences']) &&
                     !('role' in incoming());
 
       allow update: if (isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) &&
                     // Action-Based Update: Profile synchronization
-                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'phone', 'birthday', 'zipCode', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer', 'accountType'])) &&
+                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'avatar', 'phone', 'birthday', 'zipCode', 'metroId', 'businessName', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer', 'accountType'])) &&
                     !('role' in incoming())) 
                     || isAdmin();
     }
@@ -146,12 +145,12 @@ service cloud.firestore {
       // Pillar 8: Secure List Queries
       allow list: if true; 
 
-      allow create: if (isVerifiedUser() && isValidId(eventId) &&
+      allow create: if ((isSignedIn() && isValidId(eventId) &&
                     isValidEvent(incoming()) &&
                     incoming().userId == request.auth.uid &&
                     incoming().userCreated == true &&
                     incoming().createdAt == request.time)
-                    || isAdmin();
+                    || isAdmin());
       
       allow update: if (isSignedIn() && existing().userId == request.auth.uid &&
                     isValidEvent(incoming()) &&
@@ -167,14 +166,14 @@ service cloud.firestore {
 
     match /organizations/{orgId} {
       allow read: if true;
-      allow create: if isVerifiedUser() && isValidId(orgId) &&
+      allow create: if ((isSignedIn() && isValidId(orgId) &&
                     isValidOrganization(incoming()) &&
-                    incoming().ownerId == request.auth.uid &&
-                    incoming().id == orgId;
-      allow update: if isSignedIn() && isValidOrganization(incoming()) &&
+                    (incoming().ownerId == request.auth.uid || isAdmin()) &&
+                    incoming().id == orgId) || isAdmin());
+      allow update: if (isSignedIn() && isValidOrganization(incoming()) &&
                     (existing().ownerId == request.auth.uid || 
-                     incoming().diff(existing()).affectedKeys().hasOnly(['members']));
-      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
+                     incoming().diff(existing()).affectedKeys().hasOnly(['members']))) || isAdmin();
+      allow delete: if (isSignedIn() && existing().ownerId == request.auth.uid) || isAdmin();
     }
 
     match /stats/{statId} {

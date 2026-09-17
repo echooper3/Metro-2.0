@@ -13,7 +13,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Zap, Clock, DollarSign, User as UserIcon, Heart, AlertTriangle, Edit2, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { DateFilterType, isEventInDateRange } from './utils/dateUtils';
+import { buildTrackedUrl } from './utils/trackingUtils';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
 const AuthModal = lazy(() => import('./components/AuthModal'));
@@ -66,6 +68,10 @@ const App: React.FC = () => {
   }, [allEvents]);
   const [sources, setSources] = useState<GroundingSource[]>([]);
   const [activeCategory, setActiveCategory] = useState<Category>('All');
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [isCustomDateOpen, setIsCustomDateOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -272,20 +278,16 @@ const App: React.FC = () => {
         e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
         e.description.toLowerCase().includes(searchQuery.toLowerCase());
 
-      // Filter out past events (keep today's and future events)
-      let isCurrentOrFuture = true;
-      if (e.date) {
-        const parsed = new Date(e.date);
-        if (!isNaN(parsed.getTime())) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const compareDate = new Date(parsed);
-          compareDate.setHours(0, 0, 0, 0);
-          isCurrentOrFuture = compareDate.getTime() >= today.getTime();
-        }
-      }
+      // Date range filtering
+      const matchesDate = isEventInDateRange(
+        e.date,
+        dateFilter,
+        customStartDate,
+        customEndDate,
+        dateFilter === 'custom' || dateFilter === 'past'
+      );
 
-      return matchesCategory && matchesCity && matchesQuery && isCurrentOrFuture;
+      return matchesCategory && matchesCity && matchesQuery && matchesDate;
     });
 
     // Parse date safely
@@ -321,7 +323,7 @@ const App: React.FC = () => {
       }
       return getTimeInMinutes(a.time) - getTimeInMinutes(b.time);
     });
-  }, [allEvents, dbEvents, activeCategory, selectedCity, searchQuery]);
+  }, [allEvents, dbEvents, activeCategory, selectedCity, searchQuery, dateFilter, customStartDate, customEndDate]);
 
 
   const loadCityEvents = useCallback(async (cityName: string | 'All', options: FetchOptions = {}) => {
@@ -442,7 +444,7 @@ const App: React.FC = () => {
               id: firebaseUser.uid,
               name: firebaseUser.displayName || 'Metropolitan Member',
               email: firebaseUser.email || '',
-              avatar: firebaseUser.photoURL || undefined,
+              ...(firebaseUser.photoURL ? { avatar: firebaseUser.photoURL } : {}),
               phone: '',
               birthday: '',
               zipCode: '',
@@ -496,15 +498,18 @@ const App: React.FC = () => {
           }
         } catch (error) {
           console.error("Firestore user fetch failed, using Auth fallback:", error);
+          const pending = pendingOnboardingDataRef.current;
           const fallbackUserData: UserProfile = {
             id: firebaseUser.uid,
             name: firebaseUser.displayName || 'Metropolitan Member',
             email: firebaseUser.email || '',
-            avatar: firebaseUser.photoURL || undefined,
+            ...(firebaseUser.photoURL ? { avatar: firebaseUser.photoURL } : {}),
             phone: '',
             birthday: '',
             zipCode: '',
             savedEvents: [],
+            ...(pending?.accountType ? { accountType: pending.accountType } : {}),
+            ...(pending?.isOrganizer !== undefined ? { isOrganizer: pending.isOrganizer } : {}),
             preferences: { favoriteCategories: [], hasCompletedOnboarding: true }
           };
           setUser(fallbackUserData);
@@ -542,8 +547,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!isAuthReady) return;
 
-    const q = query(collection(db, 'events'), orderBy('createdAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(collection(db, 'events'), (snapshot) => {
       const events = snapshot.docs.map(doc => {
         const data = doc.data();
         const rawCat = data.category;
@@ -563,6 +567,24 @@ const App: React.FC = () => {
         
         return mappedEvent;
       });
+
+      // Sort client-side safely without dropping documents missing createdAt
+      events.sort((a, b) => {
+        const getMillis = (ev: any) => {
+          if (ev.createdAt?.toMillis) return ev.createdAt.toMillis();
+          if (ev.createdAt) {
+            const parsed = new Date(ev.createdAt).getTime();
+            if (!isNaN(parsed)) return parsed;
+          }
+          if (ev.date) {
+            const parsed = new Date(ev.date).getTime();
+            if (!isNaN(parsed)) return parsed;
+          }
+          return 0;
+        };
+        return getMillis(b) - getMillis(a);
+      });
+
       setDbEvents(events);
     }, (error) => {
       // Don't throw in onSnapshot to avoid crashing the SDK internal state
@@ -667,21 +689,57 @@ const App: React.FC = () => {
   }, []);
 
   const handleDeleteEvent = useCallback(async (event: EventActivity) => {
-    if (event.id) {
-      if (!event.id.startsWith('live-') && !event.id.startsWith('seed-')) {
-        try {
-          await deleteDoc(doc(db, 'events', event.id));
-        } catch (e) {
-          console.error("Failed to delete event:", e);
-          addToast("Failed to delete event from database.");
-          return;
-        }
-      }
-    }
+    // 1. Optimistic removal: remove from UI instantly (0ms latency)
     setAllEvents(prev => prev.filter(e => e.id !== event.id));
     setDbEvents(prev => prev.filter(e => e.id !== event.id));
     addToast("Broadcast signal terminated");
-  }, []);
+
+    // 2. Perform Firestore deletion in background
+    if (event.id && !event.id.startsWith('live-') && !event.id.startsWith('seed-')) {
+      try {
+        await deleteDoc(doc(db, 'events', event.id));
+      } catch (e) {
+        console.error("Failed to delete event:", e);
+        addToast("Failed to delete event from database.");
+        // Rollback optimistic update on failure
+        setAllEvents(prev => [event, ...prev]);
+        setDbEvents(prev => [event, ...prev]);
+      }
+    }
+  }, [addToast]);
+
+  const handleDeleteMultipleEvents = useCallback(async (events: EventActivity[]) => {
+    if (!events || events.length === 0) return;
+    const ids = new Set(events.map(e => e.id));
+    const count = events.length;
+
+    // 1. Optimistic removal: remove from UI instantly (0ms latency)
+    setAllEvents(prev => prev.filter(e => !ids.has(e.id)));
+    setDbEvents(prev => prev.filter(e => !ids.has(e.id)));
+    addToast(`${count} broadcast signal${count > 1 ? 's' : ''} terminated`);
+
+    // 2. Perform Firestore deletion in chunked batches (400 max per batch to stay under 500 limit)
+    const validEvents = events.filter(e => e.id && !e.id.startsWith('live-') && !e.id.startsWith('seed-'));
+    if (validEvents.length > 0) {
+      try {
+        const BATCH_SIZE = 400;
+        for (let i = 0; i < validEvents.length; i += BATCH_SIZE) {
+          const chunk = validEvents.slice(i, i + BATCH_SIZE);
+          const batch = writeBatch(db);
+          chunk.forEach(ev => {
+            batch.delete(doc(db, 'events', ev.id));
+          });
+          await batch.commit();
+        }
+      } catch (e) {
+        console.error("Failed to batch delete events:", e);
+        addToast("Failed to delete some events from database.");
+        // Rollback optimistic update on failure
+        setAllEvents(prev => [...events, ...prev]);
+        setDbEvents(prev => [...events, ...prev]);
+      }
+    }
+  }, [addToast]);
 
   const handleUpdatePreferences = useCallback(async (prefs: UserProfile['preferences']) => {
     if (!user) return;
@@ -694,10 +752,27 @@ const App: React.FC = () => {
     }
   }, [user]);
 
-  const handleUpdateProfile = useCallback(async (name: string, email: string, phone?: string, birthday?: string, zipCode?: string) => {
+  const handleUpdateProfile = useCallback(async (
+    name: string, 
+    email: string, 
+    phone?: string, 
+    birthday?: string, 
+    zipCode?: string, 
+    accountType?: 'individual' | 'organizer' | 'business'
+  ) => {
     if (!user) return;
     try {
-      const updates = { name, email, phone, birthday, zipCode };
+      const updates: any = { 
+        name: name.trim(), 
+        email: email.trim(), 
+        phone: phone || '', 
+        birthday: birthday || '', 
+        zipCode: zipCode || '' 
+      };
+      if (accountType) {
+        updates.accountType = accountType;
+        updates.isOrganizer = accountType === 'organizer' || accountType === 'business';
+      }
       await updateDoc(doc(db, 'users', user.id), updates);
       setUser(prev => prev ? { ...prev, ...updates } : null);
       addToast("Metropolitan profile updated");
@@ -899,19 +974,146 @@ const App: React.FC = () => {
               </div>
             </div>
 
-          <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30 sticky top-24">
-            <div className="flex flex-wrap items-center justify-center gap-2 md:gap-3 bg-white/90 backdrop-blur-md p-3 md:p-4 rounded-[2rem] md:rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100">
-              {CATEGORIES.map(cat => (
-                <button 
-                  key={cat} 
-                  onClick={() => handleCategoryClick(cat)} 
-                  className={`px-4 py-3 md:px-8 md:py-5 rounded-[1.5rem] md:rounded-[2rem] text-[9px] md:text-[10px] font-black uppercase tracking-[0.1em] md:tracking-[0.2em] transition-all shrink-0 ${activeCategory === cat ? 'bg-black text-white shadow-2xl shadow-black/20' : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-black'}`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+          <div className="max-w-7xl mx-auto px-4 -mt-10 relative z-30 sticky top-24 space-y-3">
+            <div className="bg-white/90 backdrop-blur-md p-3 md:p-4 rounded-[2rem] md:rounded-[3rem] shadow-2xl shadow-black/5 border border-gray-100 space-y-3">
+              {/* Category Pills */}
+              <div className="flex flex-nowrap items-center justify-start md:justify-center gap-2 overflow-x-auto scrollbar-hide py-1">
+                {CATEGORIES.map(cat => (
+                  <button 
+                    key={cat} 
+                    onClick={() => handleCategoryClick(cat)} 
+                    className={`px-3.5 py-2 md:px-4 md:py-2.5 rounded-[1.2rem] text-[9px] md:text-[10px] font-black uppercase tracking-[0.08em] md:tracking-[0.15em] transition-all shrink-0 whitespace-nowrap cursor-pointer ${
+                      activeCategory === cat 
+                        ? 'bg-black text-white shadow-xl shadow-black/20' 
+                        : 'bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-black'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
 
+              {/* Date Filter Bar */}
+              <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 px-2">
+                <div className="flex flex-nowrap items-center gap-1.5 md:gap-2 overflow-x-auto scrollbar-hide py-0.5 max-w-full">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 mr-1 flex items-center gap-1 shrink-0">
+                    <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                    Date:
+                  </span>
+                  {[
+                    { id: 'all', label: 'All Dates' },
+                    { id: 'today', label: 'Today' },
+                    { id: 'tomorrow', label: 'Tomorrow' },
+                    { id: 'weekend', label: 'This Weekend' },
+                    { id: 'week', label: 'Next 7 Days' },
+                    { id: 'custom', label: 'Custom Range' },
+                  ].map((preset) => {
+                    const isSelected = dateFilter === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          if (preset.id === 'custom') {
+                            setDateFilter('custom');
+                            setIsCustomDateOpen(prev => !prev || dateFilter !== 'custom');
+                          } else {
+                            setDateFilter(preset.id as DateFilterType);
+                            setIsCustomDateOpen(false);
+                            if (preset.id === 'all') {
+                              setCustomStartDate('');
+                              setCustomEndDate('');
+                            }
+                          }
+                        }}
+                        className={`px-3 py-1.5 md:px-3.5 md:py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
+                            : 'bg-gray-50 hover:bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {preset.id === 'custom' && <Calendar className="w-3 h-3" />}
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                  {filteredEvents.length} signal{filteredEvents.length !== 1 ? 's' : ''} found
+                </div>
+              </div>
+
+              {/* Custom Date Range Picker Accordion / Sub-panel */}
+              {(dateFilter === 'custom' || isCustomDateOpen) && (
+                <div className="pt-2 border-t border-orange-100 bg-orange-50/50 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 animate-fade-in">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-orange-900 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                      Select Range:
+                    </span>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={e => {
+                          setCustomStartDate(e.target.value);
+                          setDateFilter('custom');
+                        }}
+                        className="bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-900 focus:outline-none focus:border-black shadow-sm cursor-pointer"
+                        placeholder="Start Date"
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">to</span>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={e => {
+                          setCustomEndDate(e.target.value);
+                          setDateFilter('custom');
+                        }}
+                        className="bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-bold text-gray-900 focus:outline-none focus:border-black shadow-sm cursor-pointer"
+                        placeholder="End Date"
+                      />
+                    </div>
+
+                    {(customStartDate || customEndDate) && (
+                      <span className="px-3 py-1 bg-white border border-orange-200 text-orange-700 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm">
+                        {customStartDate || 'Any'} → {customEndDate || 'Any'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {(customStartDate || customEndDate || dateFilter === 'custom') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomStartDate('');
+                          setCustomEndDate('');
+                          setDateFilter('all');
+                          setIsCustomDateOpen(false);
+                        }}
+                        className="px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-black underline cursor-pointer"
+                      >
+                        Reset Date Filter
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomDateOpen(false)}
+                      className="p-1 text-gray-400 hover:text-black cursor-pointer"
+                      title="Collapse Date Picker"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="max-w-7xl mx-auto px-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 mt-20 min-h-[500px]">
               <AnimatePresence mode="popLayout">
                 {isRefreshing && filteredEvents.length === 0 ? (
@@ -1024,9 +1226,18 @@ const App: React.FC = () => {
             onUpdatePreferences={handleUpdatePreferences}
             onLogout={handleLogout}
             onOpenEventDetails={handleOpenDetails}
-            onPostEvent={() => setShowCreateModal(true)}
+            onPostEvent={() => {
+              setEventToEdit(null);
+              setShowCreateModal(true);
+            }}
+            onEditEvent={(event) => {
+              setEventToEdit(event);
+              setShowCreateModal(true);
+            }}
+            onNavigateToAdminQueue={() => setView(AppView.ADMIN)}
             onToggleSave={handleToggleSave}
             onDeleteEvent={handleDeleteEvent}
+            onDeleteMultipleEvents={handleDeleteMultipleEvents}
             onUpdateProfile={handleUpdateProfile}
             onUpdateOrgInfo={(orgId, orgRole) => {
               setUser(prev => prev ? { ...prev, orgId, orgRole } : null);
@@ -1039,7 +1250,12 @@ const App: React.FC = () => {
 
       {view === AppView.ADMIN && isAdmin && user && (
         <Suspense fallback={<div className="pt-40 text-center"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>}>
-          <AdminDashboard user={user} dbEvents={dbEvents} onUpdateSyncStats={(lastSyncAt, totalSyncs) => setUser(prev => prev ? { ...prev, syncStats: { lastSyncAt, totalSyncs } } : null)} />
+          <AdminDashboard 
+            user={user} 
+            dbEvents={dbEvents} 
+            onUpdateSyncStats={(lastSyncAt, totalSyncs) => setUser(prev => prev ? { ...prev, syncStats: { lastSyncAt, totalSyncs } } : null)} 
+            onDeleteMultipleEvents={handleDeleteMultipleEvents}
+          />
         </Suspense>
       )}
 
@@ -1050,6 +1266,7 @@ const App: React.FC = () => {
             defaultCity={user?.preferences.favoriteCity || selectedCity?.name || 'Tulsa'}
             eventToEdit={eventToEdit || undefined}
             userOrg={userOrg || undefined}
+            existingEvents={dbEvents}
             onClose={() => {
               setShowCreateModal(false);
               setEventToEdit(null);
@@ -1263,7 +1480,12 @@ const App: React.FC = () => {
                       <motion.a 
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
-                        href={detailedEvent.sourceUrl} 
+                        href={buildTrackedUrl(detailedEvent.sourceUrl, {
+                          source: 'inside_the_metro',
+                          medium: 'event_listing',
+                          campaign: detailedEvent.title,
+                          content: detailedEvent.cityName || 'metro'
+                        })} 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="inline-flex items-center px-10 py-5 bg-black text-white font-black rounded-2xl shadow-xl uppercase tracking-widest text-[10px]"

@@ -8,7 +8,8 @@ export const auth = getAuth(app);
 
 // Use initializeFirestore for more control over settings
 export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  ignoreUndefinedProperties: true
 }, firebaseConfig.firestoreDatabaseId);
 
 export enum OperationType {
