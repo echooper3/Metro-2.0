@@ -305,8 +305,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
         onSave({ ...finalEvent, id: docRef.id });
       }
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, eventToEdit ? OperationType.UPDATE : OperationType.CREATE, 'events');
+      alert(`Could not save event: ${error?.message || "Please check your network connection."}`);
     } finally {
       setIsSubmitting(false);
     }

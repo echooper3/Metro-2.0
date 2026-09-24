@@ -217,6 +217,7 @@ const App: React.FC = () => {
         addToast("Metropolitan profile synchronized.");
       } catch (error) {
         handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+        addToast("Notice: Could not synchronize profile to cloud.");
       }
     } else {
       setPendingOnboardingData(data);
@@ -242,10 +243,11 @@ const App: React.FC = () => {
       setShowAuthModal(true);
       return;
     }
-    const isSaved = user.savedEvents.some(e => e.id === event.id);
+    const saved = user.savedEvents || [];
+    const isSaved = saved.some(e => e?.id === event.id);
     const nextSaved = isSaved 
-      ? user.savedEvents.filter(e => e.id !== event.id)
-      : [...user.savedEvents, event];
+      ? saved.filter(e => e?.id !== event.id)
+      : [...saved, event];
     
     try {
       await updateDoc(doc(db, 'users', user.id), { savedEvents: nextSaved });
@@ -254,8 +256,9 @@ const App: React.FC = () => {
       addToast(isSaved ? "Signal removed from vault" : "Signal secured in vault");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+      addToast(isSaved ? "Could not remove signal" : "Could not secure signal");
     }
-  }, [user]);
+  }, [user, trackView]);
 
   const filteredEvents = useMemo(() => {
     const combined = [...dbEvents, ...allEvents];
@@ -749,6 +752,7 @@ const App: React.FC = () => {
       addToast("Metropolitan preferences updated");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+      addToast("Notice: Could not synchronize preferences to cloud.");
     }
   }, [user]);
 
@@ -782,6 +786,7 @@ const App: React.FC = () => {
       addToast("Metropolitan profile updated");
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+      addToast("Notice: Could not synchronize profile to cloud.");
     }
   }, [user]);
 
@@ -1267,7 +1272,7 @@ const App: React.FC = () => {
         <Suspense fallback={<div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center backdrop-blur-sm"><div className="w-12 h-12 border-4 border-orange-600 border-t-transparent rounded-full animate-spin"></div></div>}>
           <CreateEventModal 
             userId={user?.id}
-            defaultCity={user?.preferences.favoriteCity || selectedCity?.name || 'Tulsa'}
+            defaultCity={user?.preferences?.favoriteCity || selectedCity?.name || 'Tulsa'}
             eventToEdit={eventToEdit || undefined}
             userOrg={userOrg || undefined}
             existingEvents={dbEvents}

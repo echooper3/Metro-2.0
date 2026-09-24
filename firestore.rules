@@ -56,7 +56,9 @@ service cloud.firestore {
              (!('orgRole' in data) || data.orgRole is string || data.orgRole == null) &&
              (!('isOrganizer' in data) || data.isOrganizer is bool) &&
              (!('accountType' in data) || data.accountType is string) &&
-             (!('role' in data) || data.role is string);
+             (!('role' in data) || data.role is string) &&
+             (!('syncStats' in data) || data.syncStats is map) &&
+             (!('createdAt' in data) || data.createdAt is string || data.createdAt is timestamp);
     }
 
     function isValidEvent(data) {
@@ -66,27 +68,34 @@ service cloud.firestore {
              data.cityName is string &&
              data.venue is string &&
              data.userId is string &&
-             data.userCreated is bool &&
-             (!('imageUrl' in data) || data.imageUrl is string) &&
-             (!('price' in data) || data.price is string) &&
-             (!('organizerName' in data) || data.organizerName is string) &&
-             (!('organizerUrl' in data) || data.organizerUrl is string) &&
-             (!('organizerContact' in data) || data.organizerContact is string) &&
-             (!('orgId' in data) || data.orgId is string) &&
-             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 5)) &&
-             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 4000000)) &&
-             (!('youtubeUrl' in data) || data.youtubeUrl is string);
+             (!('userCreated' in data) || data.userCreated is bool) &&
+             (!('imageUrl' in data) || data.imageUrl is string || data.imageUrl == null) &&
+             (!('price' in data) || data.price is string || data.price == null) &&
+             (!('organizerName' in data) || data.organizerName is string || data.organizerName == null) &&
+             (!('organizerUrl' in data) || data.organizerUrl is string || data.organizerUrl == null) &&
+             (!('organizerContact' in data) || data.organizerContact is string || data.organizerContact == null) &&
+             (!('orgId' in data) || data.orgId is string || data.orgId == null) &&
+             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 5) || data.imageUrls == null) &&
+             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 4000000) || data.videoUrl == null) &&
+             (!('youtubeUrl' in data) || data.youtubeUrl is string || data.youtubeUrl == null) &&
+             (!('sourceUrl' in data) || data.sourceUrl is string || data.sourceUrl == null) &&
+             (!('location' in data) || data.location is string || data.location == null) &&
+             (!('date' in data) || data.date is string || data.date == null) &&
+             (!('time' in data) || data.time is string || data.time == null) &&
+             (!('endTime' in data) || data.endTime is string || data.endTime == null) &&
+             (!('ageRestriction' in data) || data.ageRestriction is string || data.ageRestriction == null) &&
+             (!('isTrending' in data) || data.isTrending is bool);
     }
 
     function isValidOrganization(data) {
       return data.id is string &&
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              data.description is string && data.description.size() <= 1000 &&
-             (!('website' in data) || data.website is string) &&
-             (!('email' in data) || data.email is string) &&
-             (!('phone' in data) || data.phone is string) &&
-             (!('logoUrl' in data) || data.logoUrl is string) &&
-             data.ownerId is string && (data.ownerId == request.auth.uid || isAdmin()) &&
+             (!('website' in data) || data.website is string || data.website == null) &&
+             (!('email' in data) || data.email is string || data.email == null) &&
+             (!('phone' in data) || data.phone is string || data.phone == null) &&
+             (!('logoUrl' in data) || data.logoUrl is string || data.logoUrl == null) &&
+             data.ownerId is string &&
              data.members is list && data.members.size() <= 100;
     }
 
@@ -95,7 +104,7 @@ service cloud.firestore {
              data.tag is string && data.tag.size() <= 50 &&
              data.description is string && data.description.size() <= 1000 &&
              data.cta is string && data.cta.size() <= 50 &&
-             data.image is string && data.image.size() <= 200000 &&
+             data.image is string && data.image.size() <= 4000000 &&
              data.url is string && data.url.size() <= 1000 &&
              data.cityId is string &&
              data.clicks is number && data.clicks >= 0 &&
@@ -111,7 +120,7 @@ service cloud.firestore {
              data.tag is string && data.tag.size() <= 50 &&
              data.description is string && data.description.size() <= 1000 &&
              data.cta is string && data.cta.size() <= 50 &&
-             data.image is string && data.image.size() <= 200000 &&
+             data.image is string && data.image.size() <= 4000000 &&
              data.url is string && data.url.size() <= 1000 &&
              data.cityId is string &&
              data.status is string && (data.status == 'pending' || data.status == 'approved' || data.status == 'declined');
@@ -127,13 +136,12 @@ service cloud.firestore {
       
       allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid &&
                     isValidUser(incoming()) && 
-                    incoming().keys().hasAll(['id', 'name', 'email', 'savedEvents', 'preferences']) &&
-                    !('role' in incoming());
+                    incoming().keys().hasAll(['id', 'name', 'email']) &&
+                    (!('role' in incoming()) || incoming().role == 'user' || isAdmin());
 
       allow update: if (isSignedIn() && userId == request.auth.uid && isValidUser(incoming()) &&
-                    // Action-Based Update: Profile synchronization
-                    (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'avatar', 'phone', 'birthday', 'zipCode', 'metroId', 'businessName', 'savedEvents', 'preferences', 'syncStats', 'orgId', 'orgRole', 'isOrganizer', 'accountType'])) &&
-                    !('role' in incoming())) 
+                    incoming().id == request.auth.uid &&
+                    (!('role' in incoming().diff(existing()).affectedKeys()) || isAdmin())) 
                     || isAdmin();
     }
 
@@ -145,18 +153,12 @@ service cloud.firestore {
 
       allow create: if ((isSignedIn() && isValidId(eventId) &&
                     isValidEvent(incoming()) &&
-                    incoming().userId == request.auth.uid &&
-                    incoming().userCreated == true &&
-                    incoming().createdAt == request.time)
+                    incoming().userId == request.auth.uid)
                     || isAdmin());
       
       allow update: if (isSignedIn() && existing().userId == request.auth.uid &&
                     isValidEvent(incoming()) &&
-                    incoming().userId == existing().userId &&
-                    // Action: Content Edit
-                    incoming().diff(existing()).affectedKeys().hasAll(['updatedAt']) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'category', 'date', 'time', 'venue', 'location', 'imageUrl', 'price', 'ageRestriction', 'updatedAt', 'organizerName', 'organizerUrl', 'organizerContact', 'orgId']) &&
-                    incoming().updatedAt == request.time)
+                    incoming().userId == existing().userId)
                     || isAdmin();
 
       allow delete: if (isSignedIn() && existing().userId == request.auth.uid) || isAdmin();
@@ -170,7 +172,7 @@ service cloud.firestore {
                     incoming().id == orgId) || isAdmin());
       allow update: if (isSignedIn() && isValidOrganization(incoming()) &&
                     (existing().ownerId == request.auth.uid || 
-                     incoming().diff(existing()).affectedKeys().hasOnly(['members']))) || isAdmin();
+                     (incoming().diff(existing()).affectedKeys().hasOnly(['members']) && incoming().ownerId == existing().ownerId))) || isAdmin();
       allow delete: if (isSignedIn() && existing().ownerId == request.auth.uid) || isAdmin();
     }
 

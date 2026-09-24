@@ -81,8 +81,17 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <div className="flex flex-wrap items-center justify-center gap-3 mb-10 w-full">
             <button 
               type="button"
+              onClick={() => this.setState({ hasError: false, error: null, showDetails: false })}
+              className="px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-xl transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Try Again
+            </button>
+
+            <button 
+              type="button"
               onClick={() => window.location.reload()}
-              className="px-8 py-4 bg-black hover:bg-orange-600 text-white font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-xl transition-all flex items-center gap-2 cursor-pointer"
+              className="px-8 py-4 bg-black hover:bg-gray-800 text-white font-black rounded-2xl uppercase tracking-widest text-[10px] shadow-xl transition-all flex items-center gap-2 cursor-pointer"
             >
               <RotateCcw className="w-4 h-4" />
               Reboot Metropolitan Core

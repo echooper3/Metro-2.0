@@ -947,7 +947,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm">
                       <div>
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">
-                          My Broadcasted Signals ({myEvents.length})
+                          My Broadcasted Signals ({(myEvents || []).length})
                         </h3>
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">
                           Manage your submissions, bulk delete, and organize queue items
@@ -967,7 +967,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                                 submissionsFilter === 'all' ? 'bg-white text-black shadow-sm' : 'text-gray-500 hover:text-black'
                               }`}
                             >
-                              All ({myEvents.length})
+                              All ({(myEvents || []).length})
                             </button>
                             <button
                               type="button"
@@ -979,7 +979,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                                 submissionsFilter === 'uncategorized' ? 'bg-orange-600 text-white shadow-sm' : 'text-gray-500 hover:text-black'
                               }`}
                             >
-                              Queue ({myEvents.filter(e => e.category === 'Undefined').length})
+                              Queue ({(myEvents || []).filter(e => e?.category === 'Undefined').length})
                             </button>
                           </div>
                         )}
@@ -1109,7 +1109,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                             type="button"
                             disabled={isBatchDeleting}
                             onClick={() => {
-                              const selectedObjs = myEvents.filter(e => selectedEventIds.includes(e.id));
+                              const selectedObjs = (myEvents || []).filter(e => e && selectedEventIds.includes(e.id));
                               handleBatchDelete(selectedObjs);
                             }}
                             className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-sm disabled:opacity-50 flex items-center gap-2"
@@ -1252,9 +1252,9 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="relative group shrink-0">
                       <div className="w-32 h-32 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-[2.5rem] flex items-center justify-center text-white text-4xl font-black uppercase shadow-2xl shadow-orange-500/10 overflow-hidden relative">
                         {orgData.logoUrl ? (
-                          <img src={orgData.logoUrl} alt={orgData.name} className="w-full h-full object-cover rounded-[2.5rem]" />
+                          <img src={orgData.logoUrl} alt={orgData.name || 'Organization'} className="w-full h-full object-cover rounded-[2.5rem]" />
                         ) : (
-                          orgData.name.substring(0, 2)
+                          (orgData.name || '').substring(0, 2)
                         )}
                         {user.orgRole === 'owner' && (
                           <button
@@ -1326,7 +1326,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                           </div>
                         )}
                         <div className="flex items-center gap-2">
-                          <Users className="w-4 h-4" /> {orgData.members.length} {orgData.members.length === 1 ? 'Member' : 'Members'}
+                          <Users className="w-4 h-4" /> {(orgData.members || []).length} {(orgData.members || []).length === 1 ? 'Member' : 'Members'}
                         </div>
                       </div>
                     </div>
@@ -1674,14 +1674,14 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                         <div className="py-10 text-center">
                           <div className="w-8 h-8 border-2 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto" />
                         </div>
-                      ) : allOrgs.filter(org => org.name.toLowerCase().includes(searchQueryOrgs.toLowerCase())).length > 0 ? (
-                        allOrgs.filter(org => org.name.toLowerCase().includes(searchQueryOrgs.toLowerCase())).map(org => (
+                      ) : (allOrgs || []).filter(org => (org?.name || '').toLowerCase().includes((searchQueryOrgs || '').toLowerCase())).length > 0 ? (
+                        (allOrgs || []).filter(org => (org?.name || '').toLowerCase().includes((searchQueryOrgs || '').toLowerCase())).map(org => (
                           <div key={org.id} className="p-6 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between gap-4">
                             <div className="overflow-hidden">
                               <h4 className="font-black text-gray-900 uppercase tracking-tight text-sm truncate">{org.name}</h4>
                               <p className="text-[10px] text-gray-400 font-medium truncate mt-1">{org.description}</p>
                               <div className="flex items-center gap-4 text-[9px] font-black uppercase text-gray-400 mt-2">
-                                <span>{org.members.length} {org.members.length === 1 ? 'Member' : 'Members'}</span>
+                                <span>{(org.members || []).length} {(org.members || []).length === 1 ? 'Member' : 'Members'}</span>
                               </div>
                             </div>
                             
@@ -2279,7 +2279,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                         <span className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400 block mb-2">Uncategorized Events</span>
                         <div className="flex items-center justify-between">
                           <span className="text-2xl font-black text-gray-900">
-                            {myEvents.filter(e => e.category === 'Undefined').length}
+                            {(myEvents || []).filter(e => e?.category === 'Undefined').length}
                           </span>
                           <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-[9px] font-black uppercase tracking-wider">
                             In Queue
@@ -2344,7 +2344,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                 {/* Left Side: Submission History */}
                 <div className="lg:col-span-7 space-y-6">
                   <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest pb-3 border-b border-gray-100">
-                    My Applications ({sponsorships.length})
+                    My Applications ({(sponsorships || []).length})
                   </h4>
                   
                   {sponsorshipsLoading ? (
@@ -2352,15 +2352,15 @@ const ProfileView: React.FC<ProfileViewProps> = ({
                       <div className="w-8 h-8 border-4 border-orange-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Loading submissions...</p>
                     </div>
-                  ) : sponsorships.length === 0 ? (
+                  ) : (sponsorships || []).length === 0 ? (
                     <div className="py-16 text-center bg-gray-50 rounded-[2.5rem] border border-dashed border-gray-200">
                       <p className="text-xs font-black text-gray-400 uppercase tracking-widest">No sponsorships submitted yet</p>
                       <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">Fill out the form on the right to broadcast your brand</p>
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {sponsorships.map((sub) => {
-                        const liveAd = allAdsForMetrics.find(ad => ad.title === sub.title && ad.cityId === sub.cityId);
+                      {(sponsorships || []).map((sub) => {
+                        const liveAd = (allAdsForMetrics || []).find(ad => ad?.title === sub?.title && ad?.cityId === sub?.cityId);
                         
                         return (
                           <div key={sub.id} className="p-6 bg-white border border-gray-100 rounded-[2rem] hover:shadow-xl hover:shadow-gray-100 transition-all space-y-4">

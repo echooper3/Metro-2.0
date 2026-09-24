@@ -1074,7 +1074,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }
 
   const activeDbEvents = useMemo(() => {
-    return dbEvents.filter(e => !optimisticDeletedIds.has(e.id));
+    return (dbEvents || []).filter(e => !optimisticDeletedIds.has(e.id));
   }, [dbEvents, optimisticDeletedIds]);
 
   // Expired events whose scheduled date and time have passed
@@ -1374,7 +1374,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       return matchesCategory && matchesCity && matchesSearch && matchesSource && matchesDate;
     });
-  }, [activeDbEvents, queueCategoryFilter, queueCityFilter, queueSearchQuery, queueSourceFilter, queueDateFilter, queueCustomStartDate, queueCustomEndDate, user.id]);
+  }, [activeDbEvents, queueCategoryFilter, queueCityFilter, queueSearchQuery, queueSourceFilter, queueDateFilter, queueCustomStartDate, queueCustomEndDate, user?.id]);
 
   // Filtered Archive Events (Past events or events with unparseable dates)
   const filteredArchiveEvents = useMemo(() => {
@@ -2598,7 +2598,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 pl-9 pr-4 text-xs font-bold text-gray-900 focus:bg-white focus:border-black focus:outline-none transition-all"
                             >
                               <option value="all">All Sources</option>
-                              <option value="my-admin">👤 Posted by My Account ({activeDbEvents.filter(e => e.userId === user.id).length})</option>
+                              <option value="my-admin">👤 Posted by My Account ({activeDbEvents.filter(e => user?.id && e.userId === user.id).length})</option>
                               <option value="crawled">🤖 Crawled / System Signals</option>
                               <option value="users">👥 Other User Submissions</option>
                             </select>
