@@ -1065,14 +1065,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return ads.filter(ad => ad.cityId.toLowerCase() === selectedAdCityFilter.toLowerCase());
   }, [ads, selectedAdCityFilter]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <Zap className="w-12 h-12 animate-pulse text-orange-600" />
-      </div>
-    );
-  }
-
   const activeDbEvents = useMemo(() => {
     return (dbEvents || []).filter(e => !optimisticDeletedIds.has(e.id));
   }, [dbEvents, optimisticDeletedIds]);
@@ -1417,6 +1409,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return true;
     });
   }, [activeDbEvents, archiveIssueFilter, archiveCityFilter, archiveCategoryFilter, archiveSearchQuery]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <Zap className="w-12 h-12 animate-pulse text-orange-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white pt-32 pb-32">
