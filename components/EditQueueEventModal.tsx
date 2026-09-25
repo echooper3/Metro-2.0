@@ -8,7 +8,7 @@ import { doc, updateDoc, deleteDoc, setDoc, collection, serverTimestamp } from '
 import { db } from '../firebase';
 import { EventActivity } from '../types';
 import { CITIES } from '../constants';
-import { normalizeDate } from '../utils/duplicateEventProtocol';
+import { doEventsMeetDuplicateConditions } from '../utils/duplicateEventProtocol';
 
 const VALID_CATEGORIES = [
   'Sports', 
@@ -125,22 +125,24 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
   }, [event, isOpen]);
 
   const duplicateConflict = React.useMemo(() => {
-    if (!allEvents || !formData.title.trim()) return null;
-    const normTitle = formData.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-    const normDate = normalizeDate(formData.date);
+    if (!allEvents || !formData.title?.trim()) return null;
+    const currentEvent: EventActivity = {
+      id: event?.id || 'temp',
+      title: formData.title,
+      date: formData.date,
+      cityName: formData.cityName,
+      venue: formData.venue,
+      location: formData.location,
+      price: formData.price,
+      category: 'Entertainment',
+      description: ''
+    };
 
     return allEvents.find(e => {
       if (event && e.id === event.id) return false;
-      const otherNormTitle = (e.title || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-      const otherNormDate = normalizeDate(e.date);
-
-      const titleMatches = normTitle === otherNormTitle;
-      const dateMatches = Boolean(normDate && otherNormDate && normDate === otherNormDate);
-
-      // Events on different dates are NOT duplicate events
-      return titleMatches && dateMatches;
+      return doEventsMeetDuplicateConditions(currentEvent, e);
     });
-  }, [allEvents, formData.title, formData.date, event]);
+  }, [allEvents, formData.title, formData.date, formData.cityName, formData.venue, formData.location, formData.price, event]);
 
   if (!isOpen) return null;
 

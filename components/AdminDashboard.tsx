@@ -2823,7 +2823,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </span>
                             </div>
                             <p className="text-xs text-gray-500 font-medium mt-1 max-w-2xl">
-                              Protocol for identifying and resolving duplicate or identical event signals. Review differences side-by-side, edit details, delete redundant entries, or merge into the recommended primary record with one click.
+                              Automated protocol requiring matches across all 6 verified conditions: Date, Location, Price, Title, City, and Venue. Review differences side-by-side, edit details, delete redundant entries, or merge into the recommended primary record.
                             </p>
                           </div>
                         </div>
@@ -3070,7 +3070,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           <div className="flex flex-wrap items-center gap-2 mt-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
                                             <span>📅 {event.date || 'Date TBD'}</span>
                                             {event.time && <span>• ⏰ {event.time}</span>}
-                                            {event.venue && <span className="text-gray-600">• 📍 {event.venue}</span>}
+                                            {event.cityName && <span className="text-orange-600 font-black">• 🏙️ {event.cityName}</span>}
+                                            {event.venue && <span className="text-gray-700">• 📍 {event.venue}</span>}
+                                            {event.location && <span className="text-gray-500">• 🗺️ {event.location}</span>}
                                             {event.price && <span className="text-emerald-600 font-black">• 🎟️ {event.price}</span>}
                                           </div>
                                         </div>
