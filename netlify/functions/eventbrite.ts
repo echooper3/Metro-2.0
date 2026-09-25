@@ -82,7 +82,7 @@ export const handler: Handler = async (event) => {
         endTime: endDate ? endDate.toLocaleTimeString("en-US", { hour: '2-digit', minute: '2-digit' }) : undefined,
         venue: e.venue?.name || "Online / Venue TBD",
         location: e.venue?.address?.address_1 || "Online",
-        cityName: e.venue?.address?.city || city || "Unknown",
+        cityName: e.venue?.address?.city || (city && city !== "All" ? city : "") || "",
         sourceUrl: e.url,
         imageUrl: e.logo?.url || "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?auto=format&fit=crop&q=80&w=800",
         price: e.is_free ? "Free" : "Paid",

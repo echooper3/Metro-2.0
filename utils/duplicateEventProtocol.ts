@@ -26,6 +26,15 @@ export const normalizeText = (str?: string): string => {
 };
 
 /**
+ * Normalizes city names. Unknown, empty, or undefined values return an empty string ('').
+ */
+export const normalizeCity = (city?: string): string => {
+  if (!city) return '';
+  const norm = normalizeText(city);
+  return norm === 'unknown' ? '' : norm;
+};
+
+/**
  * Normalizes date representations (YYYY-MM-DD or standard parsable dates)
  */
 export const normalizeDate = (dateStr?: string): string => {
@@ -193,8 +202,8 @@ export const doEventsMeetDuplicateConditions = (
   if (d1 !== d2) return false;
 
   // 2. CityName condition: Must match
-  const c1 = normalizeText(e1.cityName || 'tulsa');
-  const c2 = normalizeText(e2.cityName || 'tulsa');
+  const c1 = normalizeCity(e1.cityName);
+  const c2 = normalizeCity(e2.cityName);
   if (c1 !== c2) return false;
 
   // 3. Title condition: Must match or have high similarity (>=85%)
@@ -277,7 +286,7 @@ export const detectDuplicateEvents = (
     const normTitle = normalizeText(event.title);
     const normDt = normalizeDate(event.date);
     if (!normTitle || !normDt) return;
-    const normCt = normalizeText(event.cityName || 'tulsa');
+    const normCt = normalizeCity(event.cityName);
     const normVen = normalizeText(event.venue);
     const normLoc = normalizeText(event.location);
     const normPr = normalizePrice(event.price, event.isFree);
@@ -378,7 +387,7 @@ export const detectDuplicateEvents = (
     }
 
     if (matchedGroup.length > 1) {
-      const key = `undated_${normalizeText(e1.title)}_${normalizeText(e1.cityName || 'tulsa')}`;
+      const key = `undated_${normalizeText(e1.title)}_${normalizeCity(e1.cityName) || 'nocity'}`;
       if (!dismissedClusterKeys.has(key)) {
         const scored = matchedGroup.map(e => ({
           event: e,

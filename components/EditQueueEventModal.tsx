@@ -66,7 +66,7 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
   const [formData, setFormData] = useState({
     title: '',
     category: 'Undefined',
-    cityName: 'Tulsa',
+    cityName: '',
     date: '',
     time: '',
     endTime: '',
@@ -88,10 +88,14 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
 
   useEffect(() => {
     if (event) {
+      const rawCity = (event.cityName || '').trim();
+      const isUnknownCity = !rawCity || rawCity.toLowerCase() === 'unknown';
+      const cleanCityName = isUnknownCity ? '' : rawCity;
+
       setFormData({
         title: event.title || '',
         category: event.category || 'Undefined',
-        cityName: event.cityName || 'Tulsa',
+        cityName: cleanCityName,
         date: event.date || '',
         time: event.time || '',
         endTime: event.endTime || '',
@@ -107,7 +111,7 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
       setFormData({
         title: '',
         category: 'Undefined',
-        cityName: 'Tulsa',
+        cityName: '',
         date: new Date().toISOString().split('T')[0],
         time: '7:00 PM',
         endTime: '10:00 PM',
@@ -177,11 +181,12 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
 
     try {
       if (event) {
+        const finalCityName = formData.cityName.trim().toLowerCase() === 'unknown' ? '' : formData.cityName.trim();
         const eventRef = doc(db, 'events', event.id);
         await setDoc(eventRef, {
           title: formData.title.trim(),
           category: formData.category,
-          cityName: formData.cityName.trim(),
+          cityName: finalCityName,
           date: formData.date.trim(),
           time: formData.time.trim(),
           endTime: formData.endTime.trim(),
@@ -197,17 +202,18 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
           updatedAt: serverTimestamp()
         }, { merge: true });
       } else {
+        const finalCityName = formData.cityName.trim().toLowerCase() === 'unknown' ? '' : formData.cityName.trim();
         const newEventRef = doc(collection(db, 'events'));
         await setDoc(newEventRef, {
           id: newEventRef.id,
           title: formData.title.trim(),
           category: formData.category,
-          cityName: formData.cityName.trim(),
+          cityName: finalCityName,
           date: formData.date.trim(),
           time: formData.time.trim(),
           endTime: formData.endTime.trim(),
           venue: formData.venue.trim() || formData.title.trim(),
-          location: formData.location.trim() || formData.cityName.trim(),
+          location: formData.location.trim() || finalCityName,
           description: formData.description.trim(),
           imageUrl: formData.imageUrl.trim(),
           price: formData.isFree ? 'Free' : formData.price.trim(),
@@ -345,25 +351,62 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
               </div>
 
               <div>
-                <label className={labelClasses}>City Hub</label>
-                <select
-                  className={inputClasses}
-                  value={formData.cityName}
-                  onChange={e => setFormData({ ...formData, cityName: e.target.value })}
-                >
-                  {CITIES.map(c => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                  <option value="Custom">Other / Custom</option>
-                </select>
-                {formData.cityName === 'Custom' && (
+                <div className="flex items-center justify-between mb-1">
+                  <label className={labelClasses}>City Name</label>
+                  {(!formData.cityName || formData.cityName.toLowerCase() === 'unknown') ? (
+                    <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      ⚠️ City Unknown (Please fill)
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                      Editable Field
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
                   <input
                     type="text"
-                    className={`${inputClasses} mt-2`}
-                    placeholder="Enter custom city name"
+                    list="city-options-list"
+                    className={inputClasses}
+                    value={formData.cityName}
                     onChange={e => setFormData({ ...formData, cityName: e.target.value })}
+                    placeholder="Leave blank or enter city name (e.g. Tulsa, Dallas...)"
                   />
-                )}
+                  <datalist id="city-options-list">
+                    {CITIES.map(c => (
+                      <option key={c.id} value={c.name} />
+                    ))}
+                  </datalist>
+                  <MapPin className="w-4 h-4 text-gray-400 absolute right-3 top-3.5 pointer-events-none" />
+                </div>
+                {/* Quick Select Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Quick Select:</span>
+                  {CITIES.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setFormData({ ...formData, cityName: c.name })}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${
+                        formData.cityName?.toLowerCase() === c.name.toLowerCase()
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100 hover:text-black'
+                      }`}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                  {formData.cityName && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, cityName: '' })}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold text-gray-400 hover:text-red-600 border border-transparent hover:border-gray-200 transition-colors cursor-pointer"
+                      title="Clear field to leave blank"
+                    >
+                      Clear (Blank)
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

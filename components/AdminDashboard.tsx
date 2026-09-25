@@ -203,9 +203,15 @@ const CategorizationCard: React.FC<CategorizationCardProps> = ({
               Duplicate Flagged
             </button>
           )}
-          <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
-            {event.cityName || 'Tulsa'}
-          </span>
+          {event.cityName && event.cityName.toLowerCase() !== 'unknown' ? (
+            <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+              {event.cityName}
+            </span>
+          ) : (
+            <span className="bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+              No City Set
+            </span>
+          )}
         </div>
       </div>
 
@@ -1034,7 +1040,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         ageRestriction: item?.ageRestriction?.toString() || "",
         venue: item?.venue?.toString() || "",
         location: item?.location?.toString() || "",
-        cityName: capitalizeFirstLetter(item?.cityName || ""),
+        cityName: (() => {
+          const raw = item?.cityName?.toString().trim() || "";
+          return raw.toLowerCase() === "unknown" ? "" : capitalizeFirstLetter(raw);
+        })(),
         imageUrl: item?.imageUrl || "",
         adminCreated: true,
         userId: user.id,
@@ -1094,7 +1103,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       if (duplicateCityFilter !== 'All') {
         const hasCity = cluster.events.some(e => 
-          (e.cityName || 'Tulsa').toLowerCase() === duplicateCityFilter.toLowerCase()
+          Boolean(e.cityName) && e.cityName.toLowerCase() !== 'unknown' && e.cityName.toLowerCase() === duplicateCityFilter.toLowerCase()
         );
         if (!hasCity) return false;
       }
@@ -1321,6 +1330,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const unparseableCount = useMemo(() => {
     return activeDbEvents.filter(e => Boolean(e.date) && !parseEventDate(e.date)).length;
   }, [activeDbEvents]);
+  const unassignedCityCount = useMemo(() => {
+    return activeDbEvents.filter(e => !e.cityName || e.cityName.trim().toLowerCase() === 'unknown').length;
+  }, [activeDbEvents]);
   const totalInboxCount = pendingSponsorshipsCount + uncategorizedCount + expiredEvents.length;
 
   const filteredQueueEvents = useMemo(() => {
@@ -1334,8 +1346,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
 
       // City filter
-      const matchesCity = queueCityFilter === 'All' || 
-        (event.cityName?.toLowerCase() === queueCityFilter.toLowerCase());
+      let matchesCity = true;
+      if (queueCityFilter === 'Unassigned') {
+        matchesCity = !event.cityName || event.cityName.trim().toLowerCase() === 'unknown';
+      } else if (queueCityFilter !== 'All') {
+        matchesCity = event.cityName?.toLowerCase() === queueCityFilter.toLowerCase();
+      }
 
       // Search filter
       const q = queueSearchQuery.toLowerCase().trim();
@@ -2580,6 +2596,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="w-full bg-gray-50 border border-gray-200 rounded-xl py-2.5 pl-9 pr-4 text-xs font-bold text-gray-900 focus:bg-white focus:border-black focus:outline-none transition-all"
                             >
                               <option value="All">All Cities</option>
+                              {unassignedCityCount > 0 && (
+                                <option value="Unassigned">⚠️ No City Assigned ({unassignedCityCount})</option>
+                              )}
                               {CITIES.map(c => (
                                 <option key={c.id} value={c.name}>{c.name}</option>
                               ))}
@@ -3040,9 +3059,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           </span>
                                         )}
 
-                                        <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
-                                          {event.cityName || 'Tulsa'}
-                                        </span>
+                                        {event.cityName && event.cityName.toLowerCase() !== 'unknown' ? (
+                                          <span className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+                                            {event.cityName}
+                                          </span>
+                                        ) : (
+                                          <span className="bg-amber-100 text-amber-800 border border-amber-300 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shrink-0">
+                                            No City Set
+                                          </span>
+                                        )}
                                       </div>
 
                                       {/* Image Thumbnail & Details */}

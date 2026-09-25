@@ -93,7 +93,14 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
     date: eventToEdit?.date ? formatDateToInput(eventToEdit.date) : new Date().toISOString().split('T')[0],
     time: eventToEdit?.time || '19:00',
     endTime: eventToEdit?.endTime || '21:00',
-    cityName: eventToEdit?.cityName || defaultCity || 'Tulsa',
+    cityName: (() => {
+      const editCity = (eventToEdit?.cityName || '').trim();
+      if (editCity && editCity.toLowerCase() !== 'unknown') return editCity;
+      if (eventToEdit) return '';
+      const defCity = (defaultCity || '').trim();
+      if (defCity && defCity.toLowerCase() !== 'all' && defCity.toLowerCase() !== 'unknown') return defCity;
+      return '';
+    })(),
     price: eventToEdit?.price || '',
     ageRestriction: eventToEdit?.ageRestriction || ''
   });
@@ -269,8 +276,12 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
       }
     }
 
+    const rawCity = (formData.cityName || '').trim();
+    const finalCityName = rawCity.toLowerCase() === 'unknown' ? '' : rawCity;
+
     const finalEvent: any = {
         ...formData,
+        cityName: finalCityName,
         userId: eventToEdit?.userId || userId,
         date: finalDate,
         location: formData.location || addressInput,
@@ -493,10 +504,56 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
               </select>
             </div>
             <div className="space-y-2">
-              <label className={labelClasses}>City Hub</label>
-              <select className={inputClasses} value={formData.cityName} onChange={e => setFormData({...formData, cityName: e.target.value})}>
-                {CITIES.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+              <div className="flex items-center justify-between">
+                <label className={labelClasses}>City Hub</label>
+                {(!formData.cityName || formData.cityName.toLowerCase() === 'unknown') && (
+                  <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    ⚠️ Unknown (Please fill)
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  list="create-city-list"
+                  className={inputClasses}
+                  value={formData.cityName || ''}
+                  onChange={e => setFormData({ ...formData, cityName: e.target.value })}
+                  placeholder="Leave blank or enter city name..."
+                />
+                <datalist id="create-city-list">
+                  {CITIES.map(c => (
+                    <option key={c.id} value={c.name} />
+                  ))}
+                </datalist>
+                <MapPin className="w-4 h-4 text-gray-400 absolute right-3 top-3.5 pointer-events-none" />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Quick:</span>
+                {CITIES.map(c => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, cityName: c.name })}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer ${
+                      formData.cityName?.toLowerCase() === c.name.toLowerCase()
+                        ? 'bg-orange-600 text-white border-orange-600'
+                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100 hover:text-black'
+                    }`}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+                {formData.cityName && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, cityName: '' })}
+                    className="px-2 py-0.5 rounded-md text-[10px] font-bold text-gray-400 hover:text-red-600 border border-transparent hover:border-gray-200 transition-colors cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
