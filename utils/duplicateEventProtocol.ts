@@ -1,4 +1,5 @@
 import { EventActivity } from '../types';
+import { parseEventDate, toInputDateFormat } from './dateUtils';
 
 export type DuplicateMatchType = 'exact' | 'title_date' | 'title_city' | 'fuzzy';
 
@@ -31,9 +32,9 @@ export const normalizeDate = (dateStr?: string): string => {
   if (!dateStr) return '';
   const trimmed = dateStr.trim();
   
-  // YYYY-MM-DD standard format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed;
+  // YYYY-MM-DD standard format (or starting with YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.slice(0, 10);
   }
 
   // MM/DD/YYYY format
@@ -44,10 +45,16 @@ export const normalizeDate = (dateStr?: string): string => {
     return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
+  // Safe parser from dateUtils
+  const parsed = parseEventDate(trimmed);
+  if (parsed) {
+    return toInputDateFormat(parsed);
+  }
+
   // Fallback to Date parser
-  const parsed = Date.parse(trimmed);
-  if (!isNaN(parsed)) {
-    const d = new Date(parsed);
+  const fallbackParsed = Date.parse(trimmed);
+  if (!isNaN(fallbackParsed)) {
+    const d = new Date(fallbackParsed);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
@@ -120,8 +127,10 @@ export const calculateTitleSimilarity = (title1: string, title2: string): number
  * Detects duplicate events across the database based on defined protocol rules:
  * 1. Exact Match: Normalized Title + Normalized Date + Normalized City
  * 2. Title & Date Match: Normalized Title + Normalized Date
- * 3. Title & City Match: Normalized Title + Normalized City
- * 4. Fuzzy Similarity: High title overlap (> 85%) on the same date
+ * 3. Undated Title & City Match: Normalized Title + Normalized City (ONLY for records where BOTH have unspecified dates)
+ * 4. Fuzzy Similarity: High title overlap (> 85%) on the SAME date
+ * 
+ * IMPORTANT: Events with the same title/info but different dates are NOT duplicate events.
  */
 export const detectDuplicateEvents = (
   events: EventActivity[],
@@ -136,8 +145,8 @@ export const detectDuplicateEvents = (
   const exactGroups = new Map<string, EventActivity[]>();
   events.forEach(event => {
     const normTitle = normalizeText(event.title);
-    if (!normTitle) return;
     const normDt = normalizeDate(event.date);
+    if (!normTitle || !normDt) return; // Date is strictly required for exact match
     const normCt = normalizeText(event.cityName || 'tulsa');
     const key = `exact_${normTitle}_${normDt}_${normCt}`;
 
@@ -209,21 +218,24 @@ export const detectDuplicateEvents = (
     }
   });
 
-  // Pass 3: Title & City Matches (Same Title in Same City for events with missing or slightly different dates)
+  // Pass 3: Undated Matches (Same Title in Same City ONLY when BOTH events have missing/unspecified dates)
+  // Events with different scheduled dates are NEVER considered duplicates.
   const remainingPass3 = events.filter(e => !assignedEventIds.has(e.id));
-  const titleCityGroups = new Map<string, EventActivity[]>();
+  const undatedCityGroups = new Map<string, EventActivity[]>();
 
   remainingPass3.forEach(event => {
     const normTitle = normalizeText(event.title);
+    const normDt = normalizeDate(event.date);
     const normCity = normalizeText(event.cityName || 'tulsa');
-    if (!normTitle || normTitle.length < 5) return; // avoid short generic titles like "Live"
-    const key = `titlecity_${normTitle}_${normCity}`;
+    // If an event has a scheduled date, it must NOT be grouped under undated matches.
+    if (!normTitle || normTitle.length < 5 || normDt) return;
+    const key = `titlecity_undated_${normTitle}_${normCity}`;
 
-    if (!titleCityGroups.has(key)) titleCityGroups.set(key, []);
-    titleCityGroups.get(key)!.push(event);
+    if (!undatedCityGroups.has(key)) undatedCityGroups.set(key, []);
+    undatedCityGroups.get(key)!.push(event);
   });
 
-  titleCityGroups.forEach((groupEvents, key) => {
+  undatedCityGroups.forEach((groupEvents, key) => {
     if (groupEvents.length > 1) {
       if (dismissedClusterKeys.has(key)) return;
 
@@ -236,7 +248,7 @@ export const detectDuplicateEvents = (
         id: key,
         clusterKey: key,
         matchType: 'title_city',
-        matchReason: 'Same Title in the Same City',
+        matchReason: 'Same Title in the Same City (Undated Records)',
         events: scored.map(s => s.event),
         recommendedKeepId: scored[0].event.id,
         totalScoreDifference: scored[0].score - scored[scored.length - 1].score
@@ -260,7 +272,8 @@ export const detectDuplicateEvents = (
       const e2 = remainingPass4[j];
       if (assignedEventIds.has(e2.id)) continue;
       const normDate2 = normalizeDate(e2.date);
-      if (normDate1 === normDate2) {
+      // Strictly require matching normalized dates
+      if (normDate1 && normDate2 && normDate1 === normDate2) {
         const similarity = calculateTitleSimilarity(e1.title, e2.title);
         if (similarity >= 0.85) {
           fuzzyGroup.push(e2);
@@ -291,7 +304,32 @@ export const detectDuplicateEvents = (
     }
   }
 
-  return clusters;
+  // Comprehensive Invariant Check:
+  // "Events with the same title and information but different dates are not duplicate events."
+  // Strictly filter out any cluster or event where dates differ.
+  const verifiedClusters: DuplicateCluster[] = [];
+
+  for (const cluster of clusters) {
+    const datesWithValues = cluster.events.map(e => normalizeDate(e.date)).filter(Boolean);
+    const uniqueDates = new Set(datesWithValues);
+
+    // If events in this cluster have more than one distinct date, they are NOT duplicates!
+    if (uniqueDates.size > 1) {
+      continue;
+    }
+
+    // If there is a scheduled date, ensure all events in the cluster share that exact date
+    const validEvents = uniqueDates.size === 1
+      ? cluster.events.filter(e => normalizeDate(e.date) === [...uniqueDates][0])
+      : cluster.events;
+
+    if (validEvents.length > 1) {
+      cluster.events = validEvents;
+      verifiedClusters.push(cluster);
+    }
+  }
+
+  return verifiedClusters;
 };
 
 /**

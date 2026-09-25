@@ -8,6 +8,7 @@ import { doc, updateDoc, deleteDoc, setDoc, collection, serverTimestamp } from '
 import { db } from '../firebase';
 import { EventActivity } from '../types';
 import { CITIES } from '../constants';
+import { normalizeDate } from '../utils/duplicateEventProtocol';
 
 const VALID_CATEGORIES = [
   'Sports', 
@@ -126,20 +127,20 @@ const EditQueueEventModal: React.FC<EditQueueEventModalProps> = ({
   const duplicateConflict = React.useMemo(() => {
     if (!allEvents || !formData.title.trim()) return null;
     const normTitle = formData.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-    const normDate = formData.date.trim();
+    const normDate = normalizeDate(formData.date);
 
     return allEvents.find(e => {
       if (event && e.id === event.id) return false;
       const otherNormTitle = (e.title || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-      const otherNormDate = (e.date || '').trim();
+      const otherNormDate = normalizeDate(e.date);
 
       const titleMatches = normTitle === otherNormTitle;
       const dateMatches = Boolean(normDate && otherNormDate && normDate === otherNormDate);
-      const cityMatches = (e.cityName || '').toLowerCase() === formData.cityName.toLowerCase();
 
-      return titleMatches && (dateMatches || cityMatches);
+      // Events on different dates are NOT duplicate events
+      return titleMatches && dateMatches;
     });
-  }, [allEvents, formData.title, formData.date, formData.cityName, event]);
+  }, [allEvents, formData.title, formData.date, event]);
 
   if (!isOpen) return null;
 

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Image as ImageIcon, MapPin, Calendar, Clock, Sparkles, ArrowRight, Zap, Target, Video, Trash2, Play, Upload } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { normalizeDate } from '../utils/duplicateEventProtocol';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -100,20 +101,20 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ onClose, onSave, us
   const duplicateConflict = React.useMemo(() => {
     if (!existingEvents || !formData.title?.trim()) return null;
     const normTitle = formData.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-    const normDate = formData.date?.trim();
+    const normDate = normalizeDate(formData.date);
 
     return existingEvents.find(e => {
       if (eventToEdit && e.id === eventToEdit.id) return false;
       const otherNormTitle = (e.title || '').toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-      const otherNormDate = (e.date || '').trim();
+      const otherNormDate = normalizeDate(e.date);
 
       const titleMatches = normTitle === otherNormTitle;
       const dateMatches = Boolean(normDate && otherNormDate && normDate === otherNormDate);
-      const cityMatches = (e.cityName || '').toLowerCase() === (formData.cityName || '').toLowerCase();
 
-      return titleMatches && (dateMatches || cityMatches);
+      // Events with different dates are NOT duplicates
+      return titleMatches && dateMatches;
     });
-  }, [existingEvents, formData.title, formData.date, formData.cityName, eventToEdit]);
+  }, [existingEvents, formData.title, formData.date, eventToEdit]);
 
   const [addressInput, setAddressInput] = useState(eventToEdit?.location || '');
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);

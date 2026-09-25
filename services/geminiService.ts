@@ -323,21 +323,24 @@ export const fetchEvents = async (cityName: string | 'All', options: FetchOption
       category: getCanonicalCategory(e.category)
     });
 
-    // Combine and de-duplicate by title (case-insensitive)
+    // Combine and de-duplicate by title and date (case-insensitive)
+    const getEventDedupKey = (e: any) => `${(e.title || '').trim().toLowerCase()}_${(e.date || '').trim().toLowerCase()}`;
     const combinedEvents = [...(geminiResult.events || []).map(normalizeEvent)];
-    const seenTitles = new Set(combinedEvents.map(e => e.title.toLowerCase()));
+    const seenEventKeys = new Set(combinedEvents.map(getEventDedupKey));
 
     for (const e of tmEvents) {
-      if (!seenTitles.has(e.title.toLowerCase())) {
+      const key = getEventDedupKey(e);
+      if (!seenEventKeys.has(key)) {
         combinedEvents.push(normalizeEvent(e));
-        seenTitles.add(e.title.toLowerCase());
+        seenEventKeys.add(key);
       }
     }
 
     for (const e of ebEvents) {
-      if (!seenTitles.has(e.title.toLowerCase())) {
+      const key = getEventDedupKey(e);
+      if (!seenEventKeys.has(key)) {
         combinedEvents.push(normalizeEvent(e));
-        seenTitles.add(e.title.toLowerCase());
+        seenEventKeys.add(key);
       }
     }
 
