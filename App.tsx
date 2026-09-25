@@ -14,7 +14,7 @@ import { Search, MapPin, Calendar, ArrowRight, TrendingUp, Sparkles, X, Globe, Z
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, orderBy, getDocFromServer, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
-import { DateFilterType, isEventInDateRange } from './utils/dateUtils';
+import { DateFilterType, isEventInDateRange, parseEventDate } from './utils/dateUtils';
 import { buildTrackedUrl } from './utils/trackingUtils';
 
 const CreateEventModal = lazy(() => import('./components/CreateEventModal'));
@@ -296,8 +296,8 @@ const App: React.FC = () => {
     // Parse date safely
     const getTimestamp = (dateStr?: string) => {
       if (!dateStr) return Infinity; // Put events without dates at the end
-      const parsed = new Date(dateStr);
-      return isNaN(parsed.getTime()) ? Infinity : parsed.getTime();
+      const parsed = parseEventDate(dateStr);
+      return parsed ? parsed.getTime() : Infinity;
     };
 
     // Convert time to minutes from midnight

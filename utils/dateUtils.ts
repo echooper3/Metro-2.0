@@ -1,7 +1,27 @@
 export type DateFilterType = 'all' | 'today' | 'tomorrow' | 'weekend' | 'week' | 'month' | 'past' | 'custom';
 
 /**
- * Safely parses various date formats (YYYY-MM-DD, MM/DD/YYYY, ISO-8601) into a local Date object.
+ * Normalizes 2-digit years to 4-digit years.
+ * In 2026, 2-digit years like 26, 27, 28, 29, 30 are 2026, 2027, etc.
+ * 00-69 -> 2000-2069 (e.g. 26 -> 2026)
+ * 70-99 -> 1970-1999 (e.g. 99 -> 1999)
+ */
+export const normalizeTwoDigitYear = (yr: number): number => {
+  if (yr < 100) {
+    return yr < 70 ? 2000 + yr : 1900 + yr;
+  }
+  return yr;
+};
+
+/**
+ * Safely parses all supported date formats into a local Date object:
+ * - xx-xx-xxxx (e.g. 10-15-2026, 2026-10-15, 15-10-2026)
+ * - xx-xx-xx   (e.g. 10-15-26, 26-10-15, 15-10-26)
+ * - xx/xx/xxxx (e.g. 10/15/2026, 2026/10/15, 15/10/2026)
+ * - xx/xx/xx   (e.g. 10/15/26, 26/10/15, 15/10/26)
+ * - xx.xx.xxxx and xx.xx.xx
+ * - ISO-8601 strings (e.g. 2026-10-15T19:00:00.000Z)
+ * - Textual dates (e.g. "October 15, 2026", "Oct 15, 2026", "Oct 15, 26")
  */
 export const parseEventDate = (dateStr?: string): Date | null => {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -9,28 +29,112 @@ export const parseEventDate = (dateStr?: string): Date | null => {
     let clean = dateStr.trim();
     if (clean.includes('T')) clean = clean.split('T')[0];
 
-    const parts = clean.includes('-') ? clean.split('-') : clean.split('/');
-    if (parts.length === 3) {
-      let y: number, m: number, d: number;
+    // Delimiters: -, /, .
+    const parts = clean.split(/[-/.]/);
+    if (parts.length === 3 && parts.every(p => /^\d+$/.test(p.trim()))) {
+      const p0 = parseInt(parts[0], 10);
+      const p1 = parseInt(parts[1], 10);
+      const p2 = parseInt(parts[2], 10);
+
+      let y = 0, m = 0, d = 0;
+
       if (parts[0].length === 4) {
-        // YYYY-MM-DD
-        y = parseInt(parts[0], 10);
-        m = parseInt(parts[1], 10);
-        d = parseInt(parts[2], 10);
+        // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+        y = p0;
+        m = p1;
+        d = p2;
+      } else if (parts[2].length === 4) {
+        // MM-DD-YYYY, MM/DD/YYYY, or DD-MM-YYYY
+        y = p2;
+        if (p0 > 12 && p1 <= 12) {
+          // e.g. 25-10-2026 -> day 25, month 10
+          d = p0;
+          m = p1;
+        } else {
+          // US standard: MM-DD-YYYY or MM/DD/YYYY
+          m = p0;
+          d = p1;
+        }
       } else {
-        // MM/DD/YYYY
-        m = parseInt(parts[0], 10);
-        d = parseInt(parts[1], 10);
-        y = parseInt(parts[2], 10);
+        // All parts are 1 or 2 digits: xx-xx-xx or xx/xx/xx
+        const y0 = normalizeTwoDigitYear(p0);
+        const y2 = normalizeTwoDigitYear(p2);
+        const currentYear = new Date().getFullYear();
+
+        if (p1 > 12) {
+          // p1 cannot be a month, so p1 is the day: MM-DD-YY or MM/DD/YY
+          y = y2;
+          m = p0;
+          d = p1;
+        } else if (p0 > 12 && p2 > 12) {
+          // One is day and one is year, p1 is month.
+          // Choose the one that yields a current/future year (>= currentYear), or default to p2 as year
+          if (y0 >= currentYear && y2 < currentYear) {
+            // e.g. 26-10-25 -> Year 2026, Month 10, Day 25
+            y = y0;
+            m = p1;
+            d = p2;
+          } else {
+            // e.g. 25-10-26 -> Day 25, Month 10, Year 2026
+            y = y2;
+            m = p1;
+            d = p0;
+          }
+        } else if (p0 > 12) {
+          // p0 cannot be month.
+          // If p0 is a plausible 2-digit year (>= 20) and p2 is not a plausible 2-digit year (< 20)
+          // e.g. 26-10-05 (YY-MM-DD)
+          if (p0 >= 20 && p2 < 20) {
+            y = y0;
+            m = p1;
+            d = p2;
+          } else {
+            // e.g. 15-10-26 (DD-MM-YY)
+            y = y2;
+            m = p1;
+            d = p0;
+          }
+        } else if (p2 >= 20 && p2 <= 99) {
+          // Standard US: MM-DD-YY or MM/DD/YY (e.g. 10-15-26, 05-08-26)
+          y = y2;
+          m = p0;
+          d = p1;
+        } else if (p0 >= 20 && p0 <= 99 && p2 <= 12) {
+          // Short ISO: YY-MM-DD (e.g. 26-05-08)
+          y = y0;
+          m = p1;
+          d = p2;
+        } else {
+          // Default to US standard MM-DD-YY
+          y = y2;
+          m = p0;
+          d = p1;
+        }
       }
-      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-        return new Date(y, m - 1, d, 0, 0, 0, 0);
+
+      // If month > 12 and day <= 12, swap them
+      if (m > 12 && d <= 12) {
+        const temp = m;
+        m = d;
+        d = temp;
+      }
+
+      if (y >= 1970 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        const dateObj = new Date(y, m - 1, d, 0, 0, 0, 0);
+        // Explicitly set the full year to prevent JS Date interpreting 0-99 as 1900s
+        dateObj.setFullYear(y);
+        return dateObj;
       }
     }
 
+    // Fallback for written month names (e.g. "October 15, 2026", "Oct 15, 26")
     const fallback = new Date(dateStr);
     if (!isNaN(fallback.getTime())) {
-      return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate(), 0, 0, 0, 0);
+      let yr = fallback.getFullYear();
+      if (yr < 100) yr = normalizeTwoDigitYear(yr);
+      const res = new Date(yr, fallback.getMonth(), fallback.getDate(), 0, 0, 0, 0);
+      res.setFullYear(yr);
+      return res;
     }
     return null;
   } catch {

@@ -32,33 +32,15 @@ export const normalizeDate = (dateStr?: string): string => {
   if (!dateStr) return '';
   const trimmed = dateStr.trim();
   
-  // YYYY-MM-DD standard format (or starting with YYYY-MM-DD)
-  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
-    return trimmed.slice(0, 10);
-  }
-
-  // MM/DD/YYYY format
-  const slashParts = trimmed.split('/');
-  if (slashParts.length === 3) {
-    const [m, d, y] = slashParts;
-    const year = y.length === 4 ? y : `20${y.padStart(2, '0')}`;
-    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
-
-  // Safe parser from dateUtils
+  // Safe parser from dateUtils (handles xx-xx-xxxx, xx-xx-xx, xx/xx/xxxx, xx/xx/xx, ISO, text)
   const parsed = parseEventDate(trimmed);
   if (parsed) {
     return toInputDateFormat(parsed);
   }
 
-  // Fallback to Date parser
-  const fallbackParsed = Date.parse(trimmed);
-  if (!isNaN(fallbackParsed)) {
-    const d = new Date(fallbackParsed);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+  // YYYY-MM-DD standard format fallback
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.slice(0, 10);
   }
 
   return normalizeText(trimmed);
