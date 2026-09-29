@@ -51,9 +51,16 @@ export const ImportUrlModal: React.FC<ImportUrlModalProps> = ({
         body: JSON.stringify({ url: urlToFetch })
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error('Server returned a non-JSON response. Please ensure your server is updated and running.');
+      }
+
       if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to extract event from website.');
+        throw new Error(data?.error || 'Failed to extract event from website.');
       }
 
       setExtractedEvent(data.event);

@@ -17,6 +17,21 @@
   from = "/api/read-sheet"
   to = "/.netlify/functions/read-sheet"
   status = 200
+
+[[redirects]]
+  from = "/api/scrape/extract-url"
+  to = "/.netlify/functions/scrape-extract-url"
+  status = 200
+
+[[redirects]]
+  from = "/api/scrape/crawl-source"
+  to = "/.netlify/functions/scrape-crawl-source"
+  status = 200
+
+[[redirects]]
+  from = "/api/scrape/sources"
+  to = "/.netlify/functions/scrape-sources"
+  status = 200
  
 [[redirects]]
   from = "/*"

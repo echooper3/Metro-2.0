@@ -137,6 +137,42 @@ export const sanitizeScrapedCity = (cityCandidate?: string): string => {
 };
 
 /**
+ * Safely parses JSON strings, removing markdown code fences or surrounding text if present.
+ * Prevents "Unexpected token" errors.
+ */
+export const safelyParseJson = <T>(raw: string | undefined | null, fallback: T): T => {
+  if (!raw) return fallback;
+  try {
+    let clean = raw.trim();
+    if (clean.startsWith('```json')) {
+      clean = clean.replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+    } else if (clean.startsWith('```')) {
+      clean = clean.replace(/^```\s*/, '').replace(/```\s*$/, '');
+    }
+    clean = clean.trim();
+
+    const firstBrace = clean.indexOf('{');
+    const firstBracket = clean.indexOf('[');
+    if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+      const lastBracket = clean.lastIndexOf(']');
+      if (lastBracket !== -1) {
+        clean = clean.slice(firstBracket, lastBracket + 1);
+      }
+    } else if (firstBrace !== -1) {
+      const lastBrace = clean.lastIndexOf('}');
+      if (lastBrace !== -1) {
+        clean = clean.slice(firstBrace, lastBrace + 1);
+      }
+    }
+
+    return JSON.parse(clean);
+  } catch (e) {
+    console.warn('safelyParseJson fallback triggered:', e);
+    return fallback;
+  }
+};
+
+/**
  * Extracts event metadata from an individual webpage URL using Cheerio + Gemini AI.
  */
 export const extractEventFromUrl = async (targetUrl: string): Promise<ScrapedEventDraft> => {
@@ -280,7 +316,7 @@ CRITICAL INSTRUCTIONS:
       }
     });
 
-    const parsedJson = JSON.parse(response.text || '{}');
+    const parsedJson = safelyParseJson(response.text, {} as any);
     const parsedDate = parseEventDate(parsedJson.date);
 
     return {
@@ -433,7 +469,7 @@ EXTRACT AN ARRAY OF EVENTS FOLLOWING THESE RULES:
       }
     });
 
-    const parsedArray = JSON.parse(res.text || '[]');
+    const parsedArray = safelyParseJson(res.text, [] as any[]);
     return (parsedArray || []).map((item: any) => {
       const parsedDate = parseEventDate(item.date);
       return {

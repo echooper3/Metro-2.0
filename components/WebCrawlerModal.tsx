@@ -130,8 +130,16 @@ export const WebCrawlerModal: React.FC<WebCrawlerModalProps> = ({
           })
         });
 
-        const data = await response.json();
-        if (response.ok && data.success && Array.isArray(data.events)) {
+        const rawText = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          console.warn(`Server returned non-JSON response for ${source.name}`);
+          continue;
+        }
+
+        if (response.ok && data && data.success && Array.isArray(data.events)) {
           allCrawled.push(...data.events);
 
           // Update source metadata
