@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import multer from "multer";
 import XLSX from "xlsx";
 import dotenv from "dotenv";
+import { extractEventFromUrl, crawlEventsFromPage, DEFAULT_CRAWLER_SOURCES } from "./services/webScraperService";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Enable JSON request body parsing
+  app.use(express.json());
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
@@ -228,6 +232,43 @@ const jsonData = (XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false }
     });
   }
 });
+
+  // Single URL Event Extractor (Option 1)
+  app.post("/api/scrape/extract-url", async (req: any, res: any) => {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: "A valid website URL is required" });
+    }
+
+    try {
+      const event = await extractEventFromUrl(url.trim());
+      res.json({ success: true, event });
+    } catch (err: any) {
+      console.error("URL extraction failed:", err);
+      res.status(500).json({ error: err.message || "Failed to extract event from URL" });
+    }
+  });
+
+  // Multi-Event Calendar Crawler (Option 2)
+  app.post("/api/scrape/crawl-source", async (req: any, res: any) => {
+    const { url, cityName } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: "A valid calendar source URL is required" });
+    }
+
+    try {
+      const events = await crawlEventsFromPage(url.trim(), cityName);
+      res.json({ success: true, events, count: events.length });
+    } catch (err: any) {
+      console.error("Source crawl failed:", err);
+      res.status(500).json({ error: err.message || "Failed to crawl calendar page" });
+    }
+  });
+
+  // Pre-configured Scraper Sources List
+  app.get("/api/scrape/sources", (req: any, res: any) => {
+    res.json({ sources: DEFAULT_CRAWLER_SOURCES });
+  });
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

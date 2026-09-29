@@ -21,6 +21,9 @@ import EventsUploadDialog from './UploadEventsDialog';
 import EditQueueEventModal from './EditQueueEventModal';
 import SponsorOnboardingModal from './SponsorOnboardingModal';
 import MonthlySponsorSummaryModal from './MonthlySponsorSummaryModal';
+import ImportUrlModal from './ImportUrlModal';
+import WebCrawlerModal from './WebCrawlerModal';
+import { ScrapedEventDraft } from '../services/webScraperService';
 import { DateFilterType, isEventInDateRange, isEventExpired, parseEventDate } from '../utils/dateUtils';
 import { buildTrackedUrl } from '../utils/trackingUtils';
 import { 
@@ -384,6 +387,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Categorization Queue Management State
   const [editingQueueEvent, setEditingQueueEvent] = useState<EventActivity | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isImportUrlModalOpen, setIsImportUrlModalOpen] = useState(false);
+  const [isWebCrawlerModalOpen, setIsWebCrawlerModalOpen] = useState(false);
   const [selectedQueueIds, setSelectedQueueIds] = useState<string[]>([]);
   const [queueSearchQuery, setQueueSearchQuery] = useState('');
   const [queueCityFilter, setQueueCityFilter] = useState('All');
@@ -1304,6 +1309,89 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     } finally {
       setIsPurging(false);
     }
+  };
+
+  // Handler for opening an extracted URL event in the Editor
+  const handleEventExtracted = (draft: ScrapedEventDraft) => {
+    const newEvent: EventActivity = {
+      id: `import-${Date.now()}`,
+      title: draft.title,
+      category: (draft.category as any) || 'Entertainment',
+      cityName: draft.cityName || '', // Left blank if unknown for user to fill!
+      date: draft.date || '',
+      time: draft.time || '',
+      endTime: draft.endTime || '',
+      venue: draft.venue || '',
+      location: draft.location || '',
+      description: draft.description || '',
+      imageUrl: draft.imageUrl || '',
+      price: draft.price || '',
+      isFree: Boolean(draft.isFree),
+      sourceUrl: draft.sourceUrl || '',
+      userCreated: false,
+      isLive: true
+    };
+    setEditingQueueEvent(newEvent);
+    setIsEditModalOpen(true);
+  };
+
+  // Direct save of a single extracted URL event into Firestore
+  const handleDirectSaveScrapedEvent = async (draft: ScrapedEventDraft) => {
+    const newEventRef = doc(collection(db, 'events'));
+    await setDoc(newEventRef, {
+      id: newEventRef.id,
+      title: draft.title.trim(),
+      category: draft.category || 'Entertainment',
+      cityName: draft.cityName ? draft.cityName.trim() : '',
+      date: draft.date ? draft.date.trim() : '',
+      time: draft.time ? draft.time.trim() : '',
+      endTime: draft.endTime ? draft.endTime.trim() : '',
+      venue: draft.venue ? draft.venue.trim() : '',
+      location: draft.location ? draft.location.trim() : '',
+      description: draft.description ? draft.description.trim() : '',
+      imageUrl: draft.imageUrl ? draft.imageUrl.trim() : '',
+      price: draft.isFree ? 'Free' : (draft.price || ''),
+      isFree: Boolean(draft.isFree),
+      sourceUrl: draft.sourceUrl ? draft.sourceUrl.trim() : '',
+      userId: user?.id || 'admin',
+      adminCreated: true,
+      userCreated: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  };
+
+  // Batch import multiple crawled events into Firestore
+  const handleBatchImportCrawledEvents = async (drafts: ScrapedEventDraft[]): Promise<number> => {
+    const batch = writeBatch(db);
+    let count = 0;
+    for (const draft of drafts) {
+      const newRef = doc(collection(db, 'events'));
+      batch.set(newRef, {
+        id: newRef.id,
+        title: draft.title.trim(),
+        category: draft.category || 'Entertainment',
+        cityName: draft.cityName ? draft.cityName.trim() : '',
+        date: draft.date ? draft.date.trim() : '',
+        time: draft.time ? draft.time.trim() : '',
+        endTime: draft.endTime ? draft.endTime.trim() : '',
+        venue: draft.venue ? draft.venue.trim() : '',
+        location: draft.location ? draft.location.trim() : '',
+        description: draft.description ? draft.description.trim() : '',
+        imageUrl: draft.imageUrl ? draft.imageUrl.trim() : '',
+        price: draft.isFree ? 'Free' : (draft.price || ''),
+        isFree: Boolean(draft.isFree),
+        sourceUrl: draft.sourceUrl ? draft.sourceUrl.trim() : '',
+        userId: user?.id || 'admin',
+        adminCreated: true,
+        userCreated: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      count++;
+    }
+    await batch.commit();
+    return count;
   };
 
   // Auto-sweep effect: runs once on dashboard load if auto-sweep is enabled
@@ -2375,6 +2463,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             Add Event
                           </button>
 
+                          {/* Option 1: Import Single URL Button */}
+                          <button
+                            type="button"
+                            onClick={() => setIsImportUrlModalOpen(true)}
+                            className="px-4 py-2.5 bg-orange-50 hover:bg-orange-600 text-orange-700 hover:text-white border border-orange-200 hover:border-orange-600 font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-xs flex items-center gap-2"
+                            title="Paste any website link (Eventbrite, Facebook, venue site) to auto-extract details"
+                          >
+                            <Sparkles className="w-4 h-4 text-orange-500" />
+                            Import from URL
+                          </button>
+
+                          {/* Option 2: Automated Web Crawlers Button */}
+                          <button
+                            type="button"
+                            onClick={() => setIsWebCrawlerModalOpen(true)}
+                            className="px-4 py-2.5 bg-white hover:bg-black text-gray-800 hover:text-white border border-gray-200 hover:border-black font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-xs flex items-center gap-2"
+                            title="Automatically scan and scrape event listings from popular venue and city calendars"
+                          >
+                            <Globe className="w-4 h-4 text-orange-600" />
+                            Web Crawlers
+                          </button>
+
                           {/* Duplicate Protocol Shortcut Button */}
                           <button
                             type="button"
@@ -3435,6 +3545,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             setOptimisticDeletedIds(prev => new Set(prev).add(deletedId));
             setSelectedQueueIds(prev => prev.filter(id => id !== deletedId));
           }}
+        />
+
+        {/* Single URL Event Importer Modal (Option 1) */}
+        <ImportUrlModal
+          isOpen={isImportUrlModalOpen}
+          onClose={() => setIsImportUrlModalOpen(false)}
+          onEventExtracted={handleEventExtracted}
+          onDirectSaveToQueue={handleDirectSaveScrapedEvent}
+        />
+
+        {/* Multi-Source Calendar Web Crawler Modal (Option 2) */}
+        <WebCrawlerModal
+          isOpen={isWebCrawlerModalOpen}
+          onClose={() => setIsWebCrawlerModalOpen(false)}
+          existingEvents={activeDbEvents}
+          onBatchImportToQueue={handleBatchImportCrawledEvents}
         />
 
         {/* Purge Expired Events Confirmation Modal */}
