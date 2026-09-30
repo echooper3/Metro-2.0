@@ -267,9 +267,83 @@ export const calculateCompletenessScore = (event: EventActivity): number => {
   return Math.min(score, 100);
 };
 
+export interface PreNormalizedEvent {
+  event: EventActivity;
+  normTitle: string;
+  normDate: string;
+  normCity: string;
+  normVenue: string;
+  normLoc: string;
+  normPrice: string;
+  tokens: Set<string>;
+  score: number;
+}
+
+export const preNormalizeEvent = (event: EventActivity): PreNormalizedEvent => {
+  const normTitle = normalizeText(event.title);
+  return {
+    event,
+    normTitle,
+    normDate: normalizeDate(event.date),
+    normCity: normalizeCity(event.cityName),
+    normVenue: normalizeText(event.venue),
+    normLoc: normalizeText(event.location),
+    normPrice: normalizePrice(event.price, event.isFree),
+    tokens: new Set(normTitle.split(' ').filter(Boolean)),
+    score: calculateCompletenessScore(event)
+  };
+};
+
+/**
+ * Fast evaluator using pre-normalized event representations.
+ * Strictly verifies all 6 protocol factors: date, location, price, title, cityName, venue.
+ */
+export const doPreNormalizedMeetConditions = (
+  p1: PreNormalizedEvent,
+  p2: PreNormalizedEvent
+): boolean => {
+  // 1. Date condition: Must match exactly (different dates are NEVER duplicates)
+  if (p1.normDate !== p2.normDate) return false;
+
+  // 2. CityName condition: Must match
+  if (p1.normCity !== p2.normCity) return false;
+
+  // 3. Title condition: Exact or high similarity (>=85%)
+  if (!p1.normTitle || !p2.normTitle) return false;
+  if (p1.normTitle !== p2.normTitle) {
+    if (p1.tokens.size === 0 || p2.tokens.size === 0) return false;
+    let intersection = 0;
+    p1.tokens.forEach(t => {
+      if (p2.tokens.has(t)) intersection++;
+    });
+    const sim = (2 * intersection) / (p1.tokens.size + p2.tokens.size);
+    if (sim < 0.85) return false;
+  }
+
+  // 4. Venue condition: Must match or be compatible
+  if (!isVenueMatching(p1.normVenue, p2.normVenue, p1.normLoc, p2.normLoc)) {
+    return false;
+  }
+
+  // 5. Location condition: Must match or be compatible
+  if (!isLocationMatching(p1.normLoc, p2.normLoc, p1.normVenue, p2.normVenue)) {
+    return false;
+  }
+
+  // 6. Price condition: Must match or be compatible
+  if (!isPriceMatching(p1.normPrice, p2.normPrice)) {
+    return false;
+  }
+
+  return true;
+};
+
 /**
  * Detects duplicate events across the database based on defined protocol rules:
  * Evaluates all 6 required factors: date, location, price, title, cityName, venue.
+ * 
+ * Optimized via upfront pre-normalization and date/city bucketed indexing,
+ * dropping computational complexity from O(N^2) un-indexed comparisons to sub-millisecond local scans.
  */
 export const detectDuplicateEvents = (
   events: EventActivity[],
@@ -280,179 +354,170 @@ export const detectDuplicateEvents = (
   const clusters: DuplicateCluster[] = [];
   const assignedEventIds = new Set<string>();
 
-  // Pass 1: Exact Matches (Identical Title, Date, City, Venue, Location & Price)
-  const exactGroups = new Map<string, EventActivity[]>();
-  events.forEach(event => {
-    const normTitle = normalizeText(event.title);
-    const normDt = normalizeDate(event.date);
-    if (!normTitle || !normDt) return;
-    const normCt = normalizeCity(event.cityName);
-    const normVen = normalizeText(event.venue);
-    const normLoc = normalizeText(event.location);
-    const normPr = normalizePrice(event.price, event.isFree);
-    const key = `exact_${normTitle}_${normDt}_${normCt}_${normVen}_${normLoc}_${normPr}`;
+  // Upfront pre-normalization (computed once per event in O(N))
+  const preNormalized = events.map(preNormalizeEvent);
 
-    if (!exactGroups.has(key)) exactGroups.set(key, []);
-    exactGroups.get(key)!.push(event);
+  // Index events into date+city buckets (and undated+city buckets)
+  // Because events with different dates or different cities can NEVER be duplicates,
+  // we restrict multi-pass pair comparisons strictly within the same bucket.
+  const datedBuckets = new Map<string, PreNormalizedEvent[]>();
+  const undatedBuckets = new Map<string, PreNormalizedEvent[]>();
+
+  preNormalized.forEach(p => {
+    if (p.normDate) {
+      const bucketKey = `${p.normDate}:::${p.normCity}`;
+      if (!datedBuckets.has(bucketKey)) datedBuckets.set(bucketKey, []);
+      datedBuckets.get(bucketKey)!.push(p);
+    } else {
+      const bucketKey = p.normCity || 'nocity';
+      if (!undatedBuckets.has(bucketKey)) undatedBuckets.set(bucketKey, []);
+      undatedBuckets.get(bucketKey)!.push(p);
+    }
   });
 
-  exactGroups.forEach((groupEvents, key) => {
-    if (groupEvents.length > 1) {
-      if (dismissedClusterKeys.has(key)) return;
+  // Pass 1: Exact Matches across identical title, date, city, venue, location & price
+  datedBuckets.forEach(bucketEvents => {
+    const exactGroups = new Map<string, PreNormalizedEvent[]>();
+    bucketEvents.forEach(p => {
+      if (!p.normTitle) return;
+      const key = `exact_${p.normTitle}_${p.normDate}_${p.normCity}_${p.normVenue}_${p.normLoc}_${p.normPrice}`;
+      if (!exactGroups.has(key)) exactGroups.set(key, []);
+      exactGroups.get(key)!.push(p);
+    });
 
-      const scored = groupEvents.map(e => ({
-        event: e,
-        score: calculateCompletenessScore(e)
-      })).sort((a, b) => b.score - a.score);
+    exactGroups.forEach((group, key) => {
+      if (group.length > 1) {
+        if (dismissedClusterKeys.has(key)) return;
 
-      clusters.push({
-        id: key,
-        clusterKey: key,
-        matchType: 'exact',
-        matchReason: 'Exact Match: Identical Title, Date, City, Venue, Location & Price',
-        events: scored.map(s => s.event),
-        recommendedKeepId: scored[0].event.id,
-        totalScoreDifference: scored[0].score - scored[scored.length - 1].score
-      });
+        const sorted = [...group].sort((a, b) => b.score - a.score);
+        clusters.push({
+          id: key,
+          clusterKey: key,
+          matchType: 'exact',
+          matchReason: 'Exact Match: Identical Title, Date, City, Venue, Location & Price',
+          events: sorted.map(s => s.event),
+          recommendedKeepId: sorted[0].event.id,
+          totalScoreDifference: sorted[0].score - sorted[sorted.length - 1].score
+        });
 
-      groupEvents.forEach(e => assignedEventIds.add(e.id));
-    }
+        group.forEach(p => assignedEventIds.add(p.event.id));
+      }
+    });
   });
 
   // Pass 2: Compatible Title & Date Matches meeting all 6 conditions
-  const remainingPass2 = events.filter(e => !assignedEventIds.has(e.id));
-  for (let i = 0; i < remainingPass2.length; i++) {
-    const e1 = remainingPass2[i];
-    if (assignedEventIds.has(e1.id)) continue;
-    const normDate1 = normalizeDate(e1.date);
-    if (!normDate1) continue;
+  datedBuckets.forEach(bucketEvents => {
+    const unassigned = bucketEvents.filter(p => !assignedEventIds.has(p.event.id));
+    for (let i = 0; i < unassigned.length; i++) {
+      const p1 = unassigned[i];
+      if (assignedEventIds.has(p1.event.id)) continue;
 
-    const matchedGroup = [e1];
+      const matchedGroup = [p1];
 
-    for (let j = i + 1; j < remainingPass2.length; j++) {
-      const e2 = remainingPass2[j];
-      if (assignedEventIds.has(e2.id)) continue;
-      const normDate2 = normalizeDate(e2.date);
+      for (let j = i + 1; j < unassigned.length; j++) {
+        const p2 = unassigned[j];
+        if (assignedEventIds.has(p2.event.id)) continue;
 
-      if (normDate1 === normDate2) {
-        // Enforce all 6 conditions: date, location, price, title, cityName, venue
-        if (doEventsMeetDuplicateConditions(e1, e2)) {
-          matchedGroup.push(e2);
+        if (p1.normTitle === p2.normTitle && doPreNormalizedMeetConditions(p1, p2)) {
+          matchedGroup.push(p2);
+        }
+      }
+
+      if (matchedGroup.length > 1) {
+        const key = `titledate_${p1.normTitle}_${p1.normDate}`;
+        if (!dismissedClusterKeys.has(key)) {
+          const sorted = [...matchedGroup].sort((a, b) => b.score - a.score);
+          clusters.push({
+            id: key,
+            clusterKey: key,
+            matchType: 'title_date',
+            matchReason: 'Matching Title & Scheduled Date with Compatible Venue, Location & Price',
+            events: sorted.map(s => s.event),
+            recommendedKeepId: sorted[0].event.id,
+            totalScoreDifference: sorted[0].score - sorted[sorted.length - 1].score
+          });
+
+          matchedGroup.forEach(p => assignedEventIds.add(p.event.id));
         }
       }
     }
-
-    if (matchedGroup.length > 1) {
-      const key = `titledate_${normalizeText(e1.title)}_${normDate1}`;
-      if (!dismissedClusterKeys.has(key)) {
-        const scored = matchedGroup.map(e => ({
-          event: e,
-          score: calculateCompletenessScore(e)
-        })).sort((a, b) => b.score - a.score);
-
-        clusters.push({
-          id: key,
-          clusterKey: key,
-          matchType: 'title_date',
-          matchReason: 'Matching Title & Scheduled Date with Compatible Venue, Location & Price',
-          events: scored.map(s => s.event),
-          recommendedKeepId: scored[0].event.id,
-          totalScoreDifference: scored[0].score - scored[scored.length - 1].score
-        });
-
-        matchedGroup.forEach(e => assignedEventIds.add(e.id));
-      }
-    }
-  }
+  });
 
   // Pass 3: Undated Matches (Both lack date, but meet all 5 other conditions: title, cityName, venue, location, price)
-  const remainingPass3 = events.filter(e => !assignedEventIds.has(e.id));
-  for (let i = 0; i < remainingPass3.length; i++) {
-    const e1 = remainingPass3[i];
-    if (assignedEventIds.has(e1.id)) continue;
-    const normDate1 = normalizeDate(e1.date);
-    if (normDate1) continue; // Must be undated
+  undatedBuckets.forEach(bucketEvents => {
+    const unassigned = bucketEvents.filter(p => !assignedEventIds.has(p.event.id));
+    for (let i = 0; i < unassigned.length; i++) {
+      const p1 = unassigned[i];
+      if (assignedEventIds.has(p1.event.id)) continue;
 
-    const matchedGroup = [e1];
+      const matchedGroup = [p1];
 
-    for (let j = i + 1; j < remainingPass3.length; j++) {
-      const e2 = remainingPass3[j];
-      if (assignedEventIds.has(e2.id)) continue;
-      const normDate2 = normalizeDate(e2.date);
-      if (normDate2) continue; // Both must be undated
+      for (let j = i + 1; j < unassigned.length; j++) {
+        const p2 = unassigned[j];
+        if (assignedEventIds.has(p2.event.id)) continue;
 
-      if (doEventsMeetDuplicateConditions(e1, e2)) {
-        matchedGroup.push(e2);
+        if (p1.normTitle === p2.normTitle && doPreNormalizedMeetConditions(p1, p2)) {
+          matchedGroup.push(p2);
+        }
       }
-    }
 
-    if (matchedGroup.length > 1) {
-      const key = `undated_${normalizeText(e1.title)}_${normalizeCity(e1.cityName) || 'nocity'}`;
-      if (!dismissedClusterKeys.has(key)) {
-        const scored = matchedGroup.map(e => ({
-          event: e,
-          score: calculateCompletenessScore(e)
-        })).sort((a, b) => b.score - a.score);
+      if (matchedGroup.length > 1) {
+        const key = `undated_${p1.normTitle}_${p1.normCity || 'nocity'}`;
+        if (!dismissedClusterKeys.has(key)) {
+          const sorted = [...matchedGroup].sort((a, b) => b.score - a.score);
+          clusters.push({
+            id: key,
+            clusterKey: key,
+            matchType: 'title_city',
+            matchReason: 'Matching Title & City with Compatible Venue, Location & Price (Undated)',
+            events: sorted.map(s => s.event),
+            recommendedKeepId: sorted[0].event.id,
+            totalScoreDifference: sorted[0].score - sorted[sorted.length - 1].score
+          });
 
-        clusters.push({
-          id: key,
-          clusterKey: key,
-          matchType: 'title_city',
-          matchReason: 'Matching Title & City with Compatible Venue, Location & Price (Undated)',
-          events: scored.map(s => s.event),
-          recommendedKeepId: scored[0].event.id,
-          totalScoreDifference: scored[0].score - scored[scored.length - 1].score
-        });
-
-        matchedGroup.forEach(e => assignedEventIds.add(e.id));
-      }
-    }
-  }
-
-  // Pass 4: Fuzzy Title Similarity (> 85% overlap) meeting all 6 conditions (date, location, price, title, cityName, venue)
-  const remainingPass4 = events.filter(e => !assignedEventIds.has(e.id));
-  for (let i = 0; i < remainingPass4.length; i++) {
-    const e1 = remainingPass4[i];
-    if (assignedEventIds.has(e1.id)) continue;
-    const normDate1 = normalizeDate(e1.date);
-    if (!normDate1) continue;
-
-    const fuzzyGroup = [e1];
-
-    for (let j = i + 1; j < remainingPass4.length; j++) {
-      const e2 = remainingPass4[j];
-      if (assignedEventIds.has(e2.id)) continue;
-      const normDate2 = normalizeDate(e2.date);
-
-      if (normDate1 === normDate2) {
-        if (doEventsMeetDuplicateConditions(e1, e2)) {
-          fuzzyGroup.push(e2);
+          matchedGroup.forEach(p => assignedEventIds.add(p.event.id));
         }
       }
     }
+  });
 
-    if (fuzzyGroup.length > 1) {
-      const key = `fuzzy_${normalizeText(e1.title).slice(0, 15)}_${normDate1}`;
-      if (!dismissedClusterKeys.has(key)) {
-        const scored = fuzzyGroup.map(e => ({
-          event: e,
-          score: calculateCompletenessScore(e)
-        })).sort((a, b) => b.score - a.score);
+  // Pass 4: Fuzzy Title Similarity (>= 85% overlap) meeting all 6 conditions (date, location, price, title, cityName, venue)
+  datedBuckets.forEach(bucketEvents => {
+    const unassigned = bucketEvents.filter(p => !assignedEventIds.has(p.event.id));
+    for (let i = 0; i < unassigned.length; i++) {
+      const p1 = unassigned[i];
+      if (assignedEventIds.has(p1.event.id)) continue;
 
-        clusters.push({
-          id: key,
-          clusterKey: key,
-          matchType: 'fuzzy',
-          matchReason: 'High Title Similarity (>85%) with Matching Date, City, Venue, Location & Price',
-          events: scored.map(s => s.event),
-          recommendedKeepId: scored[0].event.id,
-          totalScoreDifference: scored[0].score - scored[scored.length - 1].score
-        });
+      const fuzzyGroup = [p1];
 
-        fuzzyGroup.forEach(e => assignedEventIds.add(e.id));
+      for (let j = i + 1; j < unassigned.length; j++) {
+        const p2 = unassigned[j];
+        if (assignedEventIds.has(p2.event.id)) continue;
+
+        if (doPreNormalizedMeetConditions(p1, p2)) {
+          fuzzyGroup.push(p2);
+        }
+      }
+
+      if (fuzzyGroup.length > 1) {
+        const key = `fuzzy_${p1.normTitle.slice(0, 15)}_${p1.normDate}`;
+        if (!dismissedClusterKeys.has(key)) {
+          const sorted = [...fuzzyGroup].sort((a, b) => b.score - a.score);
+          clusters.push({
+            id: key,
+            clusterKey: key,
+            matchType: 'fuzzy',
+            matchReason: 'High Title Similarity (>85%) with Matching Date, City, Venue, Location & Price',
+            events: sorted.map(s => s.event),
+            recommendedKeepId: sorted[0].event.id,
+            totalScoreDifference: sorted[0].score - sorted[sorted.length - 1].score
+          });
+
+          fuzzyGroup.forEach(p => assignedEventIds.add(p.event.id));
+        }
       }
     }
-  }
+  });
 
   // Comprehensive Invariant Check:
   // Strictly enforce that EVERY event in the cluster satisfies all 6 conditions:

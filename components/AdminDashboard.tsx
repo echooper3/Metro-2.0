@@ -86,6 +86,15 @@ interface AdminDashboardProps {
   dbEvents: EventActivity[];
   onUpdateSyncStats: (lastSyncAt: string, totalSyncs: number) => void;
   onDeleteMultipleEvents?: (events: EventActivity[]) => Promise<void>;
+  onResolveDuplicateCluster?: (
+    primaryEventId: string,
+    mergedFields: Partial<EventActivity>,
+    duplicateEvents: EventActivity[]
+  ) => Promise<void>;
+  onBatchResolveDuplicates?: (
+    primaryUpdates: Array<{ id: string; fields: Partial<EventActivity> }>,
+    duplicateEvents: EventActivity[]
+  ) => Promise<void>;
 }
 
 interface CategorizationCardProps {
@@ -347,7 +356,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   user, 
   dbEvents, 
   onUpdateSyncStats,
-  onDeleteMultipleEvents 
+  onDeleteMultipleEvents,
+  onResolveDuplicateCluster,
+  onBatchResolveDuplicates
 }) => {
   const [stats, setStats] = useState<any>(null);
   const [userCount, setUserCount] = useState(0);
@@ -378,6 +389,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [duplicateCityFilter, setDuplicateCityFilter] = useState('All');
   const [duplicateMatchTypeFilter, setDuplicateMatchTypeFilter] = useState<DuplicateMatchType | 'all'>('all');
   const [isResolvingDuplicates, setIsResolvingDuplicates] = useState(false);
+  const [resolvingClusterId, setResolvingClusterId] = useState<string | null>(null);
+  const [optimisticMergedEvents, setOptimisticMergedEvents] = useState<Map<string, Partial<EventActivity>>>(new Map());
   const [isDismissedDuplicateBanner, setIsDismissedDuplicateBanner] = useState(false);
 
   // Inbox states
@@ -1080,8 +1093,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [ads, selectedAdCityFilter]);
 
   const activeDbEvents = useMemo(() => {
-    return (dbEvents || []).filter(e => !optimisticDeletedIds.has(e.id));
-  }, [dbEvents, optimisticDeletedIds]);
+    return (dbEvents || [])
+      .filter(e => !optimisticDeletedIds.has(e.id))
+      .map(e => {
+        const merged = optimisticMergedEvents.get(e.id);
+        return merged ? { ...e, ...merged } : e;
+      });
+  }, [dbEvents, optimisticDeletedIds, optimisticMergedEvents]);
 
   // Expired events whose scheduled date and time have passed
   const expiredEvents = useMemo(() => {
@@ -1161,33 +1179,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setResolvingClusterId(cluster.id);
     setIsResolvingDuplicates(true);
-    // Optimistic removal of duplicates
+
+    const mergedFields = mergeEventData(primaryEvent, duplicatesToDelete);
+
+    // 1. Instant 0ms Optimistic removal of duplicates and merging into primary
     setOptimisticDeletedIds(prev => {
       const next = new Set(prev);
       deleteIds.forEach(id => next.add(id));
       return next;
     });
 
-    try {
-      // 1. Merge missing fields into primary
-      const mergedFields = mergeEventData(primaryEvent, duplicatesToDelete);
-      if (Object.keys(mergedFields).length > 0) {
-        await updateDoc(doc(db, 'events', primaryEvent.id), {
-          ...mergedFields,
-          updatedAt: serverTimestamp()
-        });
-      }
+    if (Object.keys(mergedFields).length > 0) {
+      setOptimisticMergedEvents(prev => {
+        const next = new Map(prev);
+        next.set(primaryEvent.id, { ...(prev.get(primaryEvent.id) || {}), ...mergedFields });
+        return next;
+      });
+    }
 
-      // 2. Delete redundant duplicate events
-      if (onDeleteMultipleEvents && duplicatesToDelete.length > 0) {
-        await onDeleteMultipleEvents(duplicatesToDelete);
+    try {
+      if (onResolveDuplicateCluster) {
+        await onResolveDuplicateCluster(primaryEvent.id, mergedFields, duplicatesToDelete);
       } else {
+        // Fallback: Atomic batch combining update and deletes in 1 request
         const batch = writeBatch(db);
+        if (Object.keys(mergedFields).length > 0) {
+          batch.update(doc(db, 'events', primaryEvent.id), {
+            ...mergedFields,
+            updatedAt: serverTimestamp()
+          });
+        }
         deleteIds.forEach(id => {
-          batch.delete(doc(db, 'events', id));
+          if (!id.startsWith('live-') && !id.startsWith('seed-')) {
+            batch.delete(doc(db, 'events', id));
+          }
         });
         await batch.commit();
+
+        if (onDeleteMultipleEvents && duplicatesToDelete.length > 0) {
+          await onDeleteMultipleEvents(duplicatesToDelete);
+        }
       }
     } catch (err) {
       console.error("Failed to resolve duplicate cluster:", err);
@@ -1197,9 +1230,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         deleteIds.forEach(id => next.delete(id));
         return next;
       });
+      setOptimisticMergedEvents(prev => {
+        const next = new Map(prev);
+        next.delete(primaryEvent.id);
+        return next;
+      });
       alert("Failed to resolve duplicates. Please check permissions.");
     } finally {
       setIsResolvingDuplicates(false);
+      setResolvingClusterId(null);
     }
   };
 
@@ -1215,6 +1254,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return;
     }
 
+    setResolvingClusterId('batch-all');
     setIsResolvingDuplicates(true);
 
     const allIdsToDelete: string[] = [];
@@ -1236,34 +1276,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     });
 
-    // Optimistic UI updates
+    // Instant 0ms Optimistic UI updates
     setOptimisticDeletedIds(prev => {
       const next = new Set(prev);
       allIdsToDelete.forEach(id => next.add(id));
       return next;
     });
 
-    try {
-      // 1. Update primaries with merged fields
-      for (const update of primaryUpdates) {
-        await updateDoc(doc(db, 'events', update.id), {
-          ...update.fields,
-          updatedAt: serverTimestamp()
+    if (primaryUpdates.length > 0) {
+      setOptimisticMergedEvents(prev => {
+        const next = new Map(prev);
+        primaryUpdates.forEach(u => {
+          next.set(u.id, { ...(prev.get(u.id) || {}), ...u.fields });
         });
-      }
+        return next;
+      });
+    }
 
-      // 2. Delete redundant duplicates
-      if (onDeleteMultipleEvents && allEventsToDelete.length > 0) {
-        await onDeleteMultipleEvents(allEventsToDelete);
+    try {
+      if (onBatchResolveDuplicates) {
+        await onBatchResolveDuplicates(primaryUpdates, allEventsToDelete);
       } else {
+        // Fallback: Atomic batch commit combining updates and deletes
         const BATCH_SIZE = 400;
-        for (let i = 0; i < allIdsToDelete.length; i += BATCH_SIZE) {
-          const chunk = allIdsToDelete.slice(i, i + BATCH_SIZE);
-          const batch = writeBatch(db);
-          chunk.forEach(id => {
-            batch.delete(doc(db, 'events', id));
+        let batch = writeBatch(db);
+        let opCount = 0;
+
+        for (const update of primaryUpdates) {
+          batch.update(doc(db, 'events', update.id), {
+            ...update.fields,
+            updatedAt: serverTimestamp()
           });
+          opCount++;
+          if (opCount >= BATCH_SIZE) {
+            await batch.commit();
+            batch = writeBatch(db);
+            opCount = 0;
+          }
+        }
+
+        for (const id of allIdsToDelete) {
+          if (!id.startsWith('live-') && !id.startsWith('seed-')) {
+            batch.delete(doc(db, 'events', id));
+            opCount++;
+            if (opCount >= BATCH_SIZE) {
+              await batch.commit();
+              batch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+        }
+
+        if (opCount > 0) {
           await batch.commit();
+        }
+
+        if (onDeleteMultipleEvents && allEventsToDelete.length > 0) {
+          await onDeleteMultipleEvents(allEventsToDelete);
         }
       }
     } catch (err) {
@@ -1274,9 +1343,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         allIdsToDelete.forEach(id => next.delete(id));
         return next;
       });
+      setOptimisticMergedEvents(prev => {
+        const next = new Map(prev);
+        primaryUpdates.forEach(u => next.delete(u.id));
+        return next;
+      });
       alert("Failed to auto-resolve some duplicates.");
     } finally {
       setIsResolvingDuplicates(false);
+      setResolvingClusterId(null);
     }
   };
 
@@ -2966,8 +3041,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl text-[10px] uppercase tracking-widest transition-all cursor-pointer shadow-md flex items-center gap-2 disabled:opacity-50"
                               title="Auto-resolve all exact duplicates: keep recommended primary and remove redundant copies"
                             >
-                              <CheckCheck className="w-4 h-4" />
-                              Auto-Resolve Exact Matches ({duplicateClusters.filter(c => c.matchType === 'exact').length})
+                              {resolvingClusterId === 'batch-all' ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  Auto-Resolving ({duplicateClusters.filter(c => c.matchType === 'exact').length})...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCheck className="w-4 h-4" />
+                                  Auto-Resolve Exact Matches ({duplicateClusters.filter(c => c.matchType === 'exact').length})
+                                </>
+                              )}
                             </button>
                           )}
                           {dismissedDuplicateClusterKeys.size > 0 && (
@@ -3235,8 +3319,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           }`}
                                           title="Keep this event as the primary source of truth, merge missing data from copies, and delete other duplicates"
                                         >
-                                          <CheckCheck className="w-3.5 h-3.5" />
-                                          {isPrimary ? 'Keep As Primary & Remove Others' : 'Select As Primary & Remove Others'}
+                                          {resolvingClusterId === cluster.id ? (
+                                            <>
+                                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              Resolving & Merging...
+                                            </>
+                                          ) : (
+                                            <>
+                                              <CheckCheck className="w-3.5 h-3.5" />
+                                              {isPrimary ? 'Keep As Primary & Remove Others' : 'Select As Primary & Remove Others'}
+                                            </>
+                                          )}
                                         </button>
 
                                         <div className="grid grid-cols-2 gap-2">

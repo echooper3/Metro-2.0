@@ -744,6 +744,122 @@ const App: React.FC = () => {
     }
   }, [addToast]);
 
+  const handleResolveDuplicateCluster = useCallback(async (
+    primaryEventId: string,
+    mergedFields: Partial<EventActivity>,
+    duplicateEvents: EventActivity[]
+  ) => {
+    if (!primaryEventId) return;
+    const duplicateIds = new Set(duplicateEvents.map(e => e.id));
+    const count = duplicateEvents.length;
+
+    // 1. Instant 0ms Optimistic UI update across all application state
+    setAllEvents(prev => prev
+      .filter(e => !duplicateIds.has(e.id))
+      .map(e => e.id === primaryEventId ? { ...e, ...mergedFields } : e)
+    );
+    setDbEvents(prev => prev
+      .filter(e => !duplicateIds.has(e.id))
+      .map(e => e.id === primaryEventId ? { ...e, ...mergedFields } : e)
+    );
+
+    addToast(`Duplicate protocol resolved: kept primary, removed ${count} duplicate${count > 1 ? 's' : ''}`);
+
+    // 2. Single unified atomic Firestore commit (both update primary + delete duplicates in 1 network request)
+    try {
+      const batch = writeBatch(db);
+      if (Object.keys(mergedFields).length > 0) {
+        batch.update(doc(db, 'events', primaryEventId), {
+          ...mergedFields,
+          updatedAt: serverTimestamp()
+        });
+      }
+      const validDeletes = duplicateEvents.filter(e => e.id && !e.id.startsWith('live-') && !e.id.startsWith('seed-'));
+      validDeletes.forEach(e => {
+        batch.delete(doc(db, 'events', e.id));
+      });
+      await batch.commit();
+    } catch (e) {
+      console.error("Failed to commit duplicate resolution:", e);
+      addToast("Failed to resolve duplicates in cloud database.");
+      // Rollback optimistic update on failure
+      setAllEvents(prev => [...duplicateEvents, ...prev]);
+      setDbEvents(prev => [...duplicateEvents, ...prev]);
+      throw e;
+    }
+  }, [addToast]);
+
+  const handleBatchResolveDuplicates = useCallback(async (
+    primaryUpdates: Array<{ id: string; fields: Partial<EventActivity> }>,
+    duplicateEvents: EventActivity[]
+  ) => {
+    if (primaryUpdates.length === 0 && duplicateEvents.length === 0) return;
+    const duplicateIds = new Set(duplicateEvents.map(e => e.id));
+    const updateMap = new Map(primaryUpdates.map(u => [u.id, u.fields]));
+    const count = duplicateEvents.length;
+
+    // 1. Instant 0ms Optimistic UI update
+    setAllEvents(prev => prev
+      .filter(e => !duplicateIds.has(e.id))
+      .map(e => {
+        const fields = updateMap.get(e.id);
+        return fields ? { ...e, ...fields } : e;
+      })
+    );
+    setDbEvents(prev => prev
+      .filter(e => !duplicateIds.has(e.id))
+      .map(e => {
+        const fields = updateMap.get(e.id);
+        return fields ? { ...e, ...fields } : e;
+      })
+    );
+
+    addToast(`Batch duplicate protocol resolved: removed ${count} redundant duplicate${count > 1 ? 's' : ''}`);
+
+    // 2. Atomic batched commit in chunks of 400
+    try {
+      const BATCH_SIZE = 400;
+      let batch = writeBatch(db);
+      let opCount = 0;
+
+      for (const update of primaryUpdates) {
+        if (Object.keys(update.fields).length > 0) {
+          batch.update(doc(db, 'events', update.id), {
+            ...update.fields,
+            updatedAt: serverTimestamp()
+          });
+          opCount++;
+          if (opCount >= BATCH_SIZE) {
+            await batch.commit();
+            batch = writeBatch(db);
+            opCount = 0;
+          }
+        }
+      }
+
+      const validDeletes = duplicateEvents.filter(e => e.id && !e.id.startsWith('live-') && !e.id.startsWith('seed-'));
+      for (const del of validDeletes) {
+        batch.delete(doc(db, 'events', del.id));
+        opCount++;
+        if (opCount >= BATCH_SIZE) {
+          await batch.commit();
+          batch = writeBatch(db);
+          opCount = 0;
+        }
+      }
+
+      if (opCount > 0) {
+        await batch.commit();
+      }
+    } catch (e) {
+      console.error("Failed to commit batch duplicate resolution:", e);
+      addToast("Failed to batch resolve duplicates in cloud database.");
+      setAllEvents(prev => [...duplicateEvents, ...prev]);
+      setDbEvents(prev => [...duplicateEvents, ...prev]);
+      throw e;
+    }
+  }, [addToast]);
+
   const handleUpdatePreferences = useCallback(async (prefs: UserProfile['preferences']) => {
     if (!user) return;
     try {
@@ -1264,6 +1380,8 @@ const App: React.FC = () => {
             dbEvents={dbEvents} 
             onUpdateSyncStats={(lastSyncAt, totalSyncs) => setUser(prev => prev ? { ...prev, syncStats: { lastSyncAt, totalSyncs } } : null)} 
             onDeleteMultipleEvents={handleDeleteMultipleEvents}
+            onResolveDuplicateCluster={handleResolveDuplicateCluster}
+            onBatchResolveDuplicates={handleBatchResolveDuplicates}
           />
         </Suspense>
       )}
